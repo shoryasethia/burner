@@ -222,11 +222,6 @@ function render() {
     return;
   }
 
-  const grandTotal = currentData.reduce((a, s) => a + s.totals.cost.total, 0);
-  const header = currentData.length > 1
-    ? `<div class="grand-total">GRAND TOTAL ACROSS ${currentData.length} SESSIONS: <strong>${fmtUsd(grandTotal)}</strong></div>`
-    : '';
-
   const slides = currentData.map((s, i) => `<div class="slide">${receiptHtml(s, i)}</div>`).join('');
   const arrows = currentData.length > 1
     ? `<button class="nav-arrow prev" aria-label="previous">‹</button><button class="nav-arrow next" aria-label="next">›</button>`
@@ -235,7 +230,7 @@ function render() {
     ? `<div class="slide-dots">${currentData.map((_, i) => `<span data-i="${i}" class="${i === 0 ? 'active' : ''}"></span>`).join('')}</div>`
     : '';
 
-  root.innerHTML = header +
+  root.innerHTML =
     `<div class="carousel">${arrows}<div class="carousel-track" id="track">${slides}</div></div>${dots}` +
     `<div class="disclaimer">Estimates, not official billing.</div>` +
     `<div class="toast" id="toast"></div>`;

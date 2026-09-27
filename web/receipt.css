@@ -86,6 +86,7 @@ body {
 
 .carousel-track {
   display: flex;
+  align-items: flex-start;
   overflow-x: auto;
   scroll-snap-type: x mandatory;
   gap: 24px;
@@ -101,23 +102,24 @@ body {
 }
 
 .nav-arrow {
-  position: absolute;
+  position: fixed;
   top: 50%;
   transform: translateY(-50%);
   z-index: 5;
   background: var(--ink);
   color: var(--page-bg);
   border: none;
-  width: 32px;
-  height: 32px;
+  width: 44px;
+  height: 44px;
   border-radius: 50%;
   cursor: pointer;
-  font-size: 14px;
-  opacity: 0.85;
+  font-size: 18px;
+  opacity: 0.7;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.3);
 }
 
-.nav-arrow.prev { left: -6px; }
-.nav-arrow.next { right: -6px; }
+.nav-arrow.prev { left: 32px; }
+.nav-arrow.next { right: 32px; }
 .nav-arrow:hover { opacity: 1; }
 
 .slide-dots {
@@ -251,14 +253,6 @@ body {
   font-size: 10px;
   color: var(--dim);
   letter-spacing: 0.1em;
-}
-
-.grand-total {
-  max-width: 460px;
-  margin: 0 auto 20px;
-  text-align: center;
-  font-size: 13px;
-  color: var(--ink);
 }
 
 .disclaimer {
