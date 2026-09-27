@@ -238,16 +238,22 @@ function render() {
   const track = document.getElementById('track');
   const dotEls = () => [...document.querySelectorAll('.slide-dots span')];
 
-  document.querySelector('.nav-arrow.prev')?.addEventListener('click', () => {
-    track.scrollBy({ left: -(track.children[0].offsetWidth + 24), behavior: 'smooth' });
-  });
-  document.querySelector('.nav-arrow.next')?.addEventListener('click', () => {
-    track.scrollBy({ left: track.children[0].offsetWidth + 24, behavior: 'smooth' });
-  });
+  const goPrev = () => track.scrollBy({ left: -(track.children[0].offsetWidth + 24), behavior: 'smooth' });
+  const goNext = () => track.scrollBy({ left: track.children[0].offsetWidth + 24, behavior: 'smooth' });
+
+  document.querySelector('.nav-arrow.prev')?.addEventListener('click', goPrev);
+  document.querySelector('.nav-arrow.next')?.addEventListener('click', goNext);
   track?.addEventListener('scroll', () => {
     const i = currentSlideIndex(track);
     dotEls().forEach((d) => d.classList.toggle('active', Number(d.dataset.i) === i));
   }, { passive: true });
+
+  if (track && currentData.length > 1) {
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'ArrowLeft') goPrev();
+      else if (e.key === 'ArrowRight') goNext();
+    });
+  }
 }
 
 function activeReceiptNode() {
