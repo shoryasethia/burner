@@ -12,10 +12,16 @@ export function renderReceipts(sessions) {
   mkdirSync(outDir, { recursive: true });
 
   const template = readFileSync(path.join(webDir, 'receipt.html'), 'utf-8');
-  const injected = template.replace(
-    '/*__BURNER_DATA__*/[]',
-    JSON.stringify(sessions)
-  );
+  // The logo has to be inlined as a data URI, not loaded as a separate
+  // file:// resource — html2canvas's Download button taints the canvas
+  // (SecurityError on toDataURL) if the receipt contains an <img> pulled
+  // in as its own file:// fetch, even from the same local directory.
+  const logoBase64 = readFileSync(path.join(webDir, 'logo-mark.png')).toString('base64');
+  const logoDataUri = `data:image/png;base64,${logoBase64}`;
+
+  const injected = template
+    .replace('/*__BURNER_DATA__*/[]', JSON.stringify(sessions))
+    .replace('/*__BURNER_LOGO_MARK__*/"logo-mark.png"', JSON.stringify(logoDataUri));
 
   const outHtml = path.join(outDir, 'receipt.html');
   writeFileSync(outHtml, injected, 'utf-8');

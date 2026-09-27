@@ -1,6 +1,6 @@
 {
   "name": "burner-cc",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Itemized dollar-and-token cost receipts for Claude Code sessions.",
   "type": "module",
   "bin": {

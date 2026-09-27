@@ -129,7 +129,7 @@ function receiptHtml(session, index) {
       </div>
       <div class="barcode" title="${bc.title}">${bc.html}</div>
       <div class="barcode-label">CC-SESSION-${session.sessionId.slice(0, 8).toUpperCase()}</div>
-      <img class="receipt-logo" src="logo-mark.png" alt="Burner" />
+      <img class="receipt-logo" src="${window.__BURNER_LOGO_MARK__ ?? 'logo-mark.png'}" alt="Burner" />
       <div class="footer brand">~ B U R N E R ~</div>
     </div>
   `;
