@@ -7,14 +7,22 @@
 </head>
 <body>
   <div class="toolbar">
-    <button data-theme="paper">Paper</button>
-    <button data-theme="thermal">Thermal</button>
-    <button data-theme="matrix">Matrix</button>
-    <button data-theme="dark">Dark</button>
+    <div class="toolbar-group">
+      <button data-theme="paper">Paper</button>
+      <button data-theme="thermal">Thermal</button>
+      <button data-theme="matrix">Matrix</button>
+      <button data-theme="dark">Dark</button>
+    </div>
+    <div class="toolbar-group">
+      <button id="copyBtn">Copy</button>
+      <button id="downloadBtn">Download</button>
+    </div>
   </div>
+
   <div id="root"></div>
 
   <script>window.__BURNER_DATA__ = /*__BURNER_DATA__*/[];</script>
+  <script src="vendor/html2canvas.min.js"></script>
   <script src="receipt.js"></script>
 </body>
 </html>

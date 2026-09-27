@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync, mkdirSync, copyFileSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync, copyFileSync, cpSync } from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import { fileURLToPath } from 'node:url';
@@ -21,6 +21,7 @@ export function renderReceipts(sessions) {
   writeFileSync(outHtml, injected, 'utf-8');
   copyFileSync(path.join(webDir, 'receipt.css'), path.join(outDir, 'receipt.css'));
   copyFileSync(path.join(webDir, 'receipt.js'), path.join(outDir, 'receipt.js'));
+  cpSync(path.join(webDir, 'vendor'), path.join(outDir, 'vendor'), { recursive: true });
 
   return outHtml;
 }
