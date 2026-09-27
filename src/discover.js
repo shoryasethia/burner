@@ -1,4 +1,4 @@
-import { readdirSync, statSync } from 'node:fs';
+import { readdirSync, statSync, readFileSync, existsSync } from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 
@@ -24,6 +24,20 @@ function walk(dir, out = []) {
   return out;
 }
 
+// Each "agent-<hash>.jsonl" subagent transcript has a sibling
+// "agent-<hash>.meta.json" naming its agent type and task description —
+// that's what lets a receipt break subagent cost down by type instead of
+// lumping every subagent run together.
+function readSubagentMeta(subagentFile) {
+  const metaPath = subagentFile.replace(/\.jsonl$/, '.meta.json');
+  if (!existsSync(metaPath)) return null;
+  try {
+    return JSON.parse(readFileSync(metaPath, 'utf-8'));
+  } catch {
+    return null;
+  }
+}
+
 // A session is identified by its top-level "<sessionId>.jsonl" file. Any
 // "<sessionId>/subagents/agent-*.jsonl" files sit alongside it and are
 // billed separately by the API, so their cost is real but attributed back
@@ -46,7 +60,7 @@ export function discoverSessions() {
     }
     const entry = sessions.get(sessionId);
     if (isSubagent) {
-      entry.subagentFiles.push(file);
+      entry.subagentFiles.push({ file, meta: readSubagentMeta(file) });
     } else {
       entry.mainFile = file;
     }

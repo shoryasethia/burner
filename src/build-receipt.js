@@ -1,4 +1,4 @@
-import { parseTranscript, timeRange } from './parse.js';
+import { parseTranscript, timeRange, mergeActivity } from './parse.js';
 import { lookupPricing, costFor, loadPricingTable } from './pricing.js';
 
 function summarizeTurns(turns, table) {
@@ -64,18 +64,59 @@ function sumTokens(models) {
   }, { input: 0, output: 0, cacheWrite5m: 0, cacheWrite1h: 0, cacheRead: 0 });
 }
 
+function sumWebSearchRequests(turns) {
+  return turns.reduce((acc, t) => acc + (t.webSearchRequests ?? 0), 0);
+}
+
+// Groups subagent runs by their agentType (from the sidecar .meta.json),
+// each with its own real, measured cost — instead of lumping every
+// subagent run into one "SUBAGENTS" blob.
+function summarizeSubagentsByType(subagentFiles, table) {
+  const byType = new Map();
+
+  for (const { file, meta } of subagentFiles) {
+    const type = meta?.agentType ?? 'unknown';
+    const { turns } = parseTranscript(file);
+    if (!byType.has(type)) byType.set(type, { agentType: type, runCount: 0, turns: [] });
+    const bucket = byType.get(type);
+    bucket.runCount += 1;
+    bucket.turns.push(...turns);
+  }
+
+  return [...byType.values()].map((bucket) => ({
+    agentType: bucket.agentType,
+    runCount: bucket.runCount,
+    models: summarizeTurns(bucket.turns, table),
+  }));
+}
+
 // Builds one receipt object for a discovered session (main transcript +
 // any subagent transcripts spawned within it). `table` is the pricing
 // table already resolved once via loadPricingTable() by the caller.
 export function buildReceipt(session, table) {
-  const mainTurns = parseTranscript(session.mainFile);
-  const subagentTurns = session.subagentFiles.flatMap((f) => parseTranscript(f));
+  const { turns: mainTurns, activity: mainActivity } = parseTranscript(session.mainFile);
+  const subagentParsed = session.subagentFiles.map(({ file }) => parseTranscript(file));
+  const subagentTurns = subagentParsed.flatMap((p) => p.turns);
 
   const mainModels = summarizeTurns(mainTurns, table);
-  const subagentModels = summarizeTurns(subagentTurns, table);
+  const subagentGroups = summarizeSubagentsByType(session.subagentFiles, table);
+  const allSubagentModels = subagentGroups.flatMap((g) => g.models);
+
+  const activity = mergeActivity([mainActivity, ...subagentParsed.map((p) => p.activity)]);
 
   const { startedAt, endedAt } = timeRange([...mainTurns, ...subagentTurns]);
-  const hasUnpriced = [...mainModels, ...subagentModels].some((m) => !m.cost);
+  const hasUnpriced = [...mainModels, ...allSubagentModels].some((m) => !m.cost);
+
+  const webSearchRequests = sumWebSearchRequests([...mainTurns, ...subagentTurns]);
+  const primaryModel = mainTurns[0]?.model ?? subagentTurns[0]?.model;
+  const searchRate = primaryModel ? lookupPricing(primaryModel, table).rates?.searchPerQuery : null;
+  const webSearchCost = webSearchRequests && searchRate ? webSearchRequests * searchRate : null;
+
+  const totals = {
+    tokens: sumTokens([...mainModels, ...allSubagentModels]),
+    cost: sumCost([...mainModels, ...allSubagentModels]),
+  };
+  if (webSearchCost) totals.cost.total += webSearchCost;
 
   return {
     sessionId: session.sessionId,
@@ -85,11 +126,11 @@ export function buildReceipt(session, table) {
     turnCount: mainTurns.length,
     subagentCount: session.subagentFiles.length,
     models: mainModels,
-    subagentModels,
-    totals: {
-      tokens: sumTokens([...mainModels, ...subagentModels]),
-      cost: sumCost([...mainModels, ...subagentModels]),
-    },
+    subagentGroups,
+    activity,
+    webSearchRequests,
+    webSearchCost,
+    totals,
     hasUnpriced,
     pricingSource: table.source,
   };

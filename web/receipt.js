@@ -75,10 +75,18 @@ function receiptHtml(session, index) {
   const seed = hashSeed(session.sessionId);
 
   const modelLines = session.models.map(modelBlock).join('');
-  const subagentSection = session.subagentModels.length
-    ? `<hr class="rule" /><div class="model-heading">SUBAGENTS (${session.subagentCount})</div>` +
-      session.subagentModels.map(modelBlock).join('')
+  const subagentSection = (session.subagentGroups ?? []).length
+    ? `<hr class="rule" />` + session.subagentGroups.map((g) =>
+        `<div class="model-heading">SUBAGENT: ${g.agentType.toUpperCase()} (${g.runCount} run${g.runCount > 1 ? 's' : ''})</div>` +
+        g.models.map(modelBlock).join('')
+      ).join('')
     : '';
+
+  const webSearchLine = session.webSearchRequests
+    ? `<div class="line"><span class="label">WEB SEARCH (${session.webSearchRequests} req)</span><span class="tok"></span><span class="amt">${fmtUsd(session.webSearchCost)}</span></div>`
+    : '';
+
+  const activitySection = activityHtml(session.activity);
 
   const authCode = session.sessionId.slice(0, 4).toUpperCase() + '-' + (seed % 9999);
   const bc = barcode(session.totals.cost.total, seed);
@@ -104,9 +112,11 @@ function receiptHtml(session, index) {
       <hr class="rule" />
       ${modelLines}
       ${subagentSection}
+      ${webSearchLine}
       <hr class="rule" />
       <div class="line bold"><span class="label">SUBTOTAL</span><span class="tok">${fmtTok(totalTok)}</span><span class="amt"></span></div>
       <div class="line total bold"><span class="label">TOTAL</span><span class="tok"></span><span class="amt">${fmtUsd(session.totals.cost.total)}</span></div>
+      ${activitySection}
       <hr class="rule" />
       <div class="footer">
         PAID WITH: TOKEN BUDGET<br/>
@@ -123,6 +133,23 @@ function receiptHtml(session, index) {
       <div class="barcode-label">CC-SESSION-${session.sessionId.slice(0, 8).toUpperCase()}</div>
       <div class="footer brand">~ B U R N E R ~</div>
     </div>
+  `;
+}
+
+function activityHtml(activity) {
+  if (!activity) return '';
+  const mcpEntries = Object.entries(activity.mcp ?? {});
+  const skillEntries = Object.entries(activity.skills ?? {});
+  if (!mcpEntries.length && !skillEntries.length) return '';
+
+  const row = (label, count) =>
+    `<div class="line"><span class="label indent">${label}</span><span class="tok">${count}×</span><span class="amt"></span></div>`;
+
+  return `
+    <hr class="rule" />
+    <div class="model-heading">ACTIVITY LOG <span class="unpriced-flag" title="call counts only — not split into a dollar cost, since a turn's token cost can't be attributed to one tool call inside it">*</span></div>
+    ${mcpEntries.map(([server, n]) => row(`MCP: ${server}`, n)).join('')}
+    ${skillEntries.map(([skill, n]) => row(`SKILL: ${skill}`, n)).join('')}
   `;
 }
 
@@ -146,16 +173,29 @@ function textReceipt(session) {
   lines.push('CLAUDE CODE - AGENTIC SESSION RECEIPT');
   lines.push(`SESSION #${session.sessionId.slice(0, 8)}  |  ${shortDate(session.startedAt)}  |  ${session.project}`);
   lines.push('-'.repeat(40));
-  for (const m of [...session.models, ...session.subagentModels]) {
+  const modelLine = (m) => {
     lines.push(m.displayName + ':');
     const t = m.tokens, c = m.cost;
     if (t.input) lines.push(`  fresh input      ${fmtTok(t.input)}   ${fmtUsd(c?.input)}`);
     if (t.cacheWrite5m || t.cacheWrite1h) lines.push(`  cache write      ${fmtTok(t.cacheWrite5m + t.cacheWrite1h)}   ${fmtUsd(c?.cacheWrite)}`);
     if (t.cacheRead) lines.push(`  cache read       ${fmtTok(t.cacheRead)}   ${fmtUsd(c?.cacheRead)}`);
     if (t.output) lines.push(`  output           ${fmtTok(t.output)}   ${fmtUsd(c?.output)}`);
+  };
+  session.models.forEach(modelLine);
+  for (const g of session.subagentGroups ?? []) {
+    lines.push(`SUBAGENT: ${g.agentType} (${g.runCount} runs)`);
+    g.models.forEach(modelLine);
   }
+  if (session.webSearchRequests) lines.push(`WEB SEARCH (${session.webSearchRequests} req)   ${fmtUsd(session.webSearchCost)}`);
   lines.push('-'.repeat(40));
   lines.push(`TOTAL: ${fmtUsd(session.totals.cost.total)}`);
+  const mcpEntries = Object.entries(session.activity?.mcp ?? {});
+  const skillEntries = Object.entries(session.activity?.skills ?? {});
+  if (mcpEntries.length || skillEntries.length) {
+    lines.push('ACTIVITY (not itemized in cost above):');
+    mcpEntries.forEach(([s, n]) => lines.push(`  mcp:${s}   ${n}x`));
+    skillEntries.forEach(([s, n]) => lines.push(`  skill:${s}   ${n}x`));
+  }
   lines.push('~ burner ~');
   return lines.join('\n');
 }
