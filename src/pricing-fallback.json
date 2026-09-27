@@ -1,0 +1,9 @@
+{
+  "_comment": "Last-resort snapshot only, used when there's no network AND no prior cache at ~/.burner-cc-cache/litellm-pricing.json. Normal operation fetches live from LiteLLM's Anthropic-sourced pricing JSON — see src/pricing.js. Values below are USD per million tokens, captured 2026-09-27.",
+  "models": {
+    "claude-opus-5": { "displayName": "Claude Opus 5", "input": 5, "output": 25, "cacheWrite5m": 6.25, "cacheWrite1h": 10, "cacheRead": 0.5 },
+    "claude-sonnet-5": { "displayName": "Claude Sonnet 5", "input": 2, "output": 10, "cacheWrite5m": 2.5, "cacheWrite1h": 4, "cacheRead": 0.2 },
+    "claude-haiku-4-5": { "displayName": "Claude Haiku 4.5", "input": 1, "output": 5, "cacheWrite5m": 1.25, "cacheWrite1h": 2, "cacheRead": 0.1 },
+    "claude-fable-5": { "displayName": "Claude Fable 5", "input": 10, "output": 50, "cacheWrite5m": 12.5, "cacheWrite1h": 20, "cacheRead": 1 }
+  }
+}
