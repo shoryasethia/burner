@@ -1,6 +1,8 @@
-<p align="center"><img src="assets/logo-with-text.png" alt="Burner" width="220" /></p>
+<img src="assets/logo-mark.png" alt="Burner" width="90" />
 
-Itemized dollar-and-token cost receipts for Claude Code sessions, rendered as a themed local HTML receipt.
+# burner
+
+Itemized dollar-and-token cost receipts for Claude Code sessions.
 
 ## Usage
 
@@ -21,6 +23,8 @@ Once published: `npx burner-cc`, `npx burner-cc --all`, etc.
 - **Pricing** (`src/pricing.js`) is fetched automatically — no file to hand-edit. It pulls Anthropic's per-model rates from [LiteLLM's community-maintained pricing JSON](https://github.com/BerriAI/litellm) (sourced from `platform.claude.com/docs/.../pricing`), caches it locally for 6 hours, and falls back to a stale cache or a small bundled snapshot (`src/pricing-fallback.json`) if offline.
 - **Receipt** (`src/build-receipt.js`) groups tokens by model and computes cost per token-type line.
 - **Rendering** (`src/render.js` + `web/`) injects the receipt JSON into `web/receipt.html` and opens it in the default browser. Theme buttons (paper / thermal / matrix / dark) switch CSS variables client-side.
+
+
 
 ## What this is not
 
