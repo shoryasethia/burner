@@ -1,7 +1,34 @@
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { discoverSessions, findSession, latestSession } from './discover.js';
 import { buildReceipt, loadPricingTable } from './build-receipt.js';
 import { renderReceipts, openInBrowser } from './render.js';
 import { detectBillingMode } from './billing-mode.js';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+const HELP_TEXT = `burner-cc — itemized cost receipts for Claude Code sessions
+
+Usage:
+  burner-cc                    latest session -> opens a receipt
+  burner-cc <session>          specific session (title, slug, or id prefix)
+  burner-cc --all              every session found, sliding carousel
+  burner-cc list               quick terminal table, no browser
+  burner-cc --json             machine-readable output, no browser
+  burner-cc -h, --help         show this help
+  burner-cc -v, --version      show version
+
+Examples:
+  burner-cc
+  burner-cc my-renamed-session
+  burner-cc --all --json
+`;
+
+function printVersion() {
+  const pkg = JSON.parse(readFileSync(path.join(__dirname, '..', 'package.json'), 'utf-8'));
+  console.log(pkg.version);
+}
 
 function fmtUsd(n) {
   return '$' + n.toFixed(3);
@@ -22,6 +49,16 @@ function printList(sessions, table) {
 
 async function main() {
   const args = process.argv.slice(2);
+
+  if (args.includes('-h') || args.includes('--help')) {
+    console.log(HELP_TEXT);
+    return;
+  }
+  if (args.includes('-v') || args.includes('--version')) {
+    printVersion();
+    return;
+  }
+
   const asJson = args.includes('--json');
   const filtered = args.filter((a) => a !== '--json');
 
