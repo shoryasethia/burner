@@ -1,6 +1,7 @@
 import { discoverSessions, findSession, latestSession } from './discover.js';
 import { buildReceipt, loadPricingTable } from './build-receipt.js';
 import { renderReceipts, openInBrowser } from './render.js';
+import { detectBillingMode } from './billing-mode.js';
 
 function fmtUsd(n) {
   return '$' + n.toFixed(3);
@@ -32,7 +33,8 @@ async function main() {
     }
     const table = await loadPricingTable();
     if (asJson) {
-      console.log(JSON.stringify(sessions.map((s) => buildReceipt(s, table)), null, 2));
+      const billingMode = detectBillingMode();
+      console.log(JSON.stringify(sessions.map((s) => ({ ...buildReceipt(s, table), billingMode })), null, 2));
     } else {
       printList(sessions, table);
     }
@@ -60,7 +62,8 @@ async function main() {
   }
 
   const table = await loadPricingTable();
-  const receipts = sessions.map((s) => buildReceipt(s, table));
+  const billingMode = detectBillingMode();
+  const receipts = sessions.map((s) => ({ ...buildReceipt(s, table), billingMode }));
 
   if (asJson) {
     console.log(JSON.stringify(receipts, null, 2));

@@ -110,6 +110,7 @@ export function buildReceipt(session, table) {
 
   return {
     sessionId: session.sessionId,
+    title: session.title,
     project: session.project,
     startedAt,
     endedAt,

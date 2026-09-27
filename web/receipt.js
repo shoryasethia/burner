@@ -86,6 +86,9 @@ function receiptHtml(session, index) {
 
   const authCode = session.sessionId.slice(0, 4).toUpperCase() + '-' + (seed % 9999);
   const bc = barcode(session.totals.cost.total, seed);
+  const notSubscription = session.billingMode !== 'subscription-likely';
+  const totalLabel = notSubscription ? 'TOTAL' : 'API-EQUIVALENT VALUE';
+  const paidWith = notSubscription ? 'TOKEN BUDGET' : 'FLAT-FEE PLAN (est. value shown, not what you paid)';
 
   return `
     <div class="receipt" data-session="${session.sessionId}">
@@ -95,7 +98,7 @@ function receiptHtml(session, index) {
       <hr class="rule" />
       <div class="meta-row">
         <div class="left">
-          SESSION #${session.sessionId.slice(0, 8)}<br/>
+          SESSION: ${session.title ?? session.sessionId.slice(0, 8)}<br/>
           DATE: ${shortDate(session.startedAt)}<br/>
           PROJECT: ${session.project}
         </div>
@@ -110,11 +113,11 @@ function receiptHtml(session, index) {
       ${subagentSection}
       <hr class="rule" />
       <div class="line bold"><span class="label">SUBTOTAL</span><span class="tok">${fmtTok(totalTok)}</span><span class="amt"></span></div>
-      <div class="line total bold"><span class="label">TOTAL</span><span class="tok"></span><span class="amt">${fmtUsd(session.totals.cost.total)}</span></div>
+      <div class="line total bold"><span class="label">${totalLabel}</span><span class="tok"></span><span class="amt">${fmtUsd(session.totals.cost.total)}</span></div>
       ${activitySection}
       <hr class="rule" />
       <div class="footer">
-        PAID WITH: TOKEN BUDGET<br/>
+        PAID WITH: ${paidWith}<br/>
         AUTH CODE: ${authCode}
         ${session.hasUnpriced ? '<br/><span class="unpriced-flag">* one model unpriced — total is a floor</span>' : ''}
       </div>
@@ -169,7 +172,7 @@ function tipFor(session) {
 function textReceipt(session) {
   const lines = [];
   lines.push('CLAUDE CODE - AGENTIC SESSION RECEIPT');
-  lines.push(`SESSION #${session.sessionId.slice(0, 8)}  |  ${shortDate(session.startedAt)}  |  ${session.project}`);
+  lines.push(`SESSION: ${session.title ?? session.sessionId.slice(0, 8)}  |  ${shortDate(session.startedAt)}  |  ${session.project}`);
   lines.push('-'.repeat(40));
   const modelLine = (m) => {
     lines.push(m.displayName + ':');
@@ -185,7 +188,8 @@ function textReceipt(session) {
     g.models.forEach(modelLine);
   }
   lines.push('-'.repeat(40));
-  lines.push(`TOTAL: ${fmtUsd(session.totals.cost.total)}`);
+  const totalLabel = session.billingMode === 'subscription-likely' ? 'API-EQUIVALENT VALUE' : 'TOTAL';
+  lines.push(`${totalLabel}: ${fmtUsd(session.totals.cost.total)}`);
   const mcpEntries = Object.entries(session.activity?.mcp ?? {});
   const skillEntries = Object.entries(session.activity?.skills ?? {});
   const webEntries = Object.entries(session.activity?.web ?? {});
@@ -229,9 +233,14 @@ function render() {
     ? `<div class="slide-dots">${currentData.map((_, i) => `<span data-i="${i}" class="${i === 0 ? 'active' : ''}"></span>`).join('')}</div>`
     : '';
 
+  const onSubscription = currentData[0]?.billingMode === 'subscription-likely';
+  const disclaimer = onSubscription
+    ? 'Estimates, not official billing. Looks like a Pro/Max/Team plan, not pay-per-token — shown as API-equivalent value, not an actual charge.'
+    : 'Estimates, not official billing.';
+
   root.innerHTML =
     `<div class="carousel">${arrows}<div class="carousel-track" id="track">${slides}</div></div>${dots}` +
-    `<div class="disclaimer">Estimates, not official billing.</div>` +
+    `<div class="disclaimer">${disclaimer}</div>` +
     `<div class="toast" id="toast"></div>`;
 
   const track = document.getElementById('track');
