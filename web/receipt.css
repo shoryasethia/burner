@@ -45,27 +45,22 @@ body {
   transition: background 0.15s, color 0.15s;
 }
 
+.page-brand {
+  position: fixed;
+  top: 20px;
+  left: 24px;
+  height: 56px;
+  width: auto;
+  z-index: 6;
+}
+
 .toolbar {
   max-width: 520px;
-  margin: 0 auto 20px;
+  margin: 0 auto 16px;
   display: flex;
-  align-items: center;
   justify-content: space-between;
   gap: 12px;
   flex-wrap: wrap;
-}
-
-.brand-mark {
-  height: 52px;
-  width: auto;
-}
-
-.toolbar-groups {
-  display: flex;
-  justify-content: flex-end;
-  gap: 16px;
-  flex-wrap: wrap;
-  flex: 1;
 }
 
 .toolbar-group {
@@ -237,8 +232,15 @@ body {
   margin-top: 6px;
 }
 
+.receipt-logo {
+  display: block;
+  height: 64px;
+  width: auto;
+  margin: 14px auto 4px;
+}
+
 .footer .brand {
-  margin-top: 10px;
+  margin-top: 2px;
   font-size: 10px;
   letter-spacing: 0.15em;
   color: var(--dim);
