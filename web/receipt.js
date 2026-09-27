@@ -82,10 +82,6 @@ function receiptHtml(session, index) {
       ).join('')
     : '';
 
-  const webSearchLine = session.webSearchRequests
-    ? `<div class="line"><span class="label">WEB SEARCH (${session.webSearchRequests} req)</span><span class="tok"></span><span class="amt">${fmtUsd(session.webSearchCost)}</span></div>`
-    : '';
-
   const activitySection = activityHtml(session.activity);
 
   const authCode = session.sessionId.slice(0, 4).toUpperCase() + '-' + (seed % 9999);
@@ -112,7 +108,6 @@ function receiptHtml(session, index) {
       <hr class="rule" />
       ${modelLines}
       ${subagentSection}
-      ${webSearchLine}
       <hr class="rule" />
       <div class="line bold"><span class="label">SUBTOTAL</span><span class="tok">${fmtTok(totalTok)}</span><span class="amt"></span></div>
       <div class="line total bold"><span class="label">TOTAL</span><span class="tok"></span><span class="amt">${fmtUsd(session.totals.cost.total)}</span></div>
@@ -140,7 +135,8 @@ function activityHtml(activity) {
   if (!activity) return '';
   const mcpEntries = Object.entries(activity.mcp ?? {});
   const skillEntries = Object.entries(activity.skills ?? {});
-  if (!mcpEntries.length && !skillEntries.length) return '';
+  const webEntries = Object.entries(activity.web ?? {});
+  if (!mcpEntries.length && !skillEntries.length && !webEntries.length) return '';
 
   const row = (label, count) =>
     `<div class="line"><span class="label indent">${label}</span><span class="tok">${count}×</span><span class="amt"></span></div>`;
@@ -150,6 +146,7 @@ function activityHtml(activity) {
     <div class="model-heading">ACTIVITY LOG <span class="unpriced-flag" title="call counts only — not split into a dollar cost, since a turn's token cost can't be attributed to one tool call inside it">*</span></div>
     ${mcpEntries.map(([server, n]) => row(`MCP: ${server}`, n)).join('')}
     ${skillEntries.map(([skill, n]) => row(`SKILL: ${skill}`, n)).join('')}
+    ${webEntries.map(([tool, n]) => row(tool.toUpperCase(), n)).join('')}
   `;
 }
 
@@ -186,15 +183,16 @@ function textReceipt(session) {
     lines.push(`SUBAGENT: ${g.agentType} (${g.runCount} runs)`);
     g.models.forEach(modelLine);
   }
-  if (session.webSearchRequests) lines.push(`WEB SEARCH (${session.webSearchRequests} req)   ${fmtUsd(session.webSearchCost)}`);
   lines.push('-'.repeat(40));
   lines.push(`TOTAL: ${fmtUsd(session.totals.cost.total)}`);
   const mcpEntries = Object.entries(session.activity?.mcp ?? {});
   const skillEntries = Object.entries(session.activity?.skills ?? {});
-  if (mcpEntries.length || skillEntries.length) {
+  const webEntries = Object.entries(session.activity?.web ?? {});
+  if (mcpEntries.length || skillEntries.length || webEntries.length) {
     lines.push('ACTIVITY (not itemized in cost above):');
     mcpEntries.forEach(([s, n]) => lines.push(`  mcp:${s}   ${n}x`));
     skillEntries.forEach(([s, n]) => lines.push(`  skill:${s}   ${n}x`));
+    webEntries.forEach(([s, n]) => lines.push(`  ${s}   ${n}x`));
   }
   lines.push('~ burner ~');
   return lines.join('\n');

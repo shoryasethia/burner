@@ -24,7 +24,6 @@ function toRates(entry, displayName) {
     cacheWrite5m: (entry.cache_creation_input_token_cost ?? 0) * mtok,
     cacheWrite1h: (entry.cache_creation_input_token_cost_above_1hr ?? entry.cache_creation_input_token_cost ?? 0) * mtok,
     cacheRead: (entry.cache_read_input_token_cost ?? 0) * mtok,
-    searchPerQuery: entry.search_context_cost_per_query?.search_context_size_medium ?? null,
   };
 }
 

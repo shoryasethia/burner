@@ -64,10 +64,6 @@ function sumTokens(models) {
   }, { input: 0, output: 0, cacheWrite5m: 0, cacheWrite1h: 0, cacheRead: 0 });
 }
 
-function sumWebSearchRequests(turns) {
-  return turns.reduce((acc, t) => acc + (t.webSearchRequests ?? 0), 0);
-}
-
 // Groups subagent runs by their agentType (from the sidecar .meta.json),
 // each with its own real, measured cost — instead of lumping every
 // subagent run into one "SUBAGENTS" blob.
@@ -107,16 +103,10 @@ export function buildReceipt(session, table) {
   const { startedAt, endedAt } = timeRange([...mainTurns, ...subagentTurns]);
   const hasUnpriced = [...mainModels, ...allSubagentModels].some((m) => !m.cost);
 
-  const webSearchRequests = sumWebSearchRequests([...mainTurns, ...subagentTurns]);
-  const primaryModel = mainTurns[0]?.model ?? subagentTurns[0]?.model;
-  const searchRate = primaryModel ? lookupPricing(primaryModel, table).rates?.searchPerQuery : null;
-  const webSearchCost = webSearchRequests && searchRate ? webSearchRequests * searchRate : null;
-
   const totals = {
     tokens: sumTokens([...mainModels, ...allSubagentModels]),
     cost: sumCost([...mainModels, ...allSubagentModels]),
   };
-  if (webSearchCost) totals.cost.total += webSearchCost;
 
   return {
     sessionId: session.sessionId,
@@ -128,8 +118,6 @@ export function buildReceipt(session, table) {
     models: mainModels,
     subagentGroups,
     activity,
-    webSearchRequests,
-    webSearchCost,
     totals,
     hasUnpriced,
     pricingSource: table.source,

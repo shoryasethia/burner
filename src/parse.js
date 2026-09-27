@@ -1,20 +1,20 @@
 import { readFileSync } from 'node:fs';
 
 // Reads one transcript file and returns a flat list of billed turns:
-// { model, timestamp, input, output, cacheWrite5m, cacheWrite1h, cacheRead,
-//   webSearchRequests, webFetchRequests }
-// plus a tool-activity tally: { mcp: {server: count}, skills: {name: count} }
+// { model, timestamp, input, output, cacheWrite5m, cacheWrite1h, cacheRead }
+// plus a tool-activity tally: { mcp: {server: count}, skills: {name: count}, web: {WebFetch/WebSearch: count} }
 export function parseTranscript(file) {
   let text;
   try {
     text = readFileSync(file, 'utf-8');
   } catch {
-    return { turns: [], activity: { mcp: {}, skills: {} } };
+    return { turns: [], activity: { mcp: {}, skills: {}, web: {} } };
   }
 
   const turns = [];
   const mcp = {};
   const skills = {};
+  const web = {};
 
   for (const line of text.split('\n')) {
     if (!line.trim()) continue;
@@ -38,6 +38,8 @@ export function parseTranscript(file) {
         } else if (block.name.startsWith('mcp__')) {
           const server = block.name.split('__')[1] ?? 'unknown';
           mcp[server] = (mcp[server] ?? 0) + 1;
+        } else if (block.name === 'WebFetch' || block.name === 'WebSearch') {
+          web[block.name] = (web[block.name] ?? 0) + 1;
         }
       }
     }
@@ -49,7 +51,6 @@ export function parseTranscript(file) {
     const isAllZero = !u.input_tokens && !u.output_tokens && !u.cache_creation_input_tokens && !u.cache_read_input_tokens;
     if (isAllZero) continue;
     const cacheCreation = u.cache_creation ?? {};
-    const serverTools = u.server_tool_use ?? {};
     turns.push({
       model: msg.model ?? 'unknown',
       timestamp: entry.timestamp ?? null,
@@ -58,11 +59,9 @@ export function parseTranscript(file) {
       cacheWrite5m: cacheCreation.ephemeral_5m_input_tokens ?? u.cache_creation_input_tokens ?? 0,
       cacheWrite1h: cacheCreation.ephemeral_1h_input_tokens ?? 0,
       cacheRead: u.cache_read_input_tokens ?? 0,
-      webSearchRequests: serverTools.web_search_requests ?? 0,
-      webFetchRequests: serverTools.web_fetch_requests ?? 0,
     });
   }
-  return { turns, activity: { mcp, skills } };
+  return { turns, activity: { mcp, skills, web } };
 }
 
 export function timeRange(turns) {
@@ -71,10 +70,11 @@ export function timeRange(turns) {
 }
 
 export function mergeActivity(activities) {
-  const merged = { mcp: {}, skills: {} };
+  const merged = { mcp: {}, skills: {}, web: {} };
   for (const a of activities) {
     for (const [k, v] of Object.entries(a.mcp)) merged.mcp[k] = (merged.mcp[k] ?? 0) + v;
     for (const [k, v] of Object.entries(a.skills)) merged.skills[k] = (merged.skills[k] ?? 0) + v;
+    for (const [k, v] of Object.entries(a.web)) merged.web[k] = (merged.web[k] ?? 0) + v;
   }
   return merged;
 }
