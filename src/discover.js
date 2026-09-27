@@ -38,6 +38,37 @@ function readSubagentMeta(subagentFile) {
   }
 }
 
+// A session's human-readable name isn't the UUID filename — Claude Code
+// logs it as a "custom-title" event when the user runs /rename, falling
+// back to the auto-generated "slug" (e.g. "wise-bubbling-wadler") that's
+// stamped on every line. Either one should be usable to find a session.
+function readSessionTitle(mainFile) {
+  let text;
+  try {
+    text = readFileSync(mainFile, 'utf-8');
+  } catch {
+    return null;
+  }
+  let title = null;
+  let slug = null;
+  for (const line of text.split('\n')) {
+    if (!line.trim()) continue;
+    if (!slug) {
+      const slugMatch = line.match(/"slug":"([^"]*)"/);
+      if (slugMatch) slug = slugMatch[1];
+    }
+    if (line.includes('"type":"custom-title"')) {
+      try {
+        const parsed = JSON.parse(line);
+        if (parsed.customTitle) title = parsed.customTitle;
+      } catch {
+        // ignore malformed line
+      }
+    }
+  }
+  return title || slug || null;
+}
+
 // A session is identified by its top-level "<sessionId>.jsonl" file. Any
 // "<sessionId>/subagents/agent-*.jsonl" files sit alongside it and are
 // billed separately by the API, so their cost is real but attributed back
@@ -72,6 +103,7 @@ export function discoverSessions() {
 
   for (const s of result) {
     s.mtime = statSync(s.mainFile).mtimeMs;
+    s.title = readSessionTitle(s.mainFile);
   }
 
   result.sort((a, b) => b.mtime - a.mtime);
@@ -80,8 +112,10 @@ export function discoverSessions() {
 
 export function findSession(idOrPrefix) {
   const all = discoverSessions();
+  const needle = idOrPrefix.toLowerCase();
   return (
     all.find((s) => s.sessionId === idOrPrefix) ||
+    all.find((s) => s.title?.toLowerCase() === needle) ||
     all.find((s) => s.sessionId.startsWith(idOrPrefix))
   );
 }

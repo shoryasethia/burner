@@ -7,13 +7,14 @@ function fmtUsd(n) {
 }
 
 function printList(sessions, table) {
-  console.log('SESSION   PROJECT                          DATE                 MODELS   COST');
+  console.log('SESSION   TITLE                 PROJECT                     DATE          MODELS   COST');
   for (const s of sessions) {
     const r = buildReceipt(s, table);
     const date = r.startedAt ? new Date(r.startedAt).toISOString().slice(0, 10) : 'unknown';
     const models = r.models.map((m) => m.displayName.replace(/\s*\(.*\)/, '')).join(', ') || 'none';
+    const title = (s.title ?? '').slice(0, 20);
     console.log(
-      `${s.sessionId.slice(0, 8)}  ${s.project.slice(0, 30).padEnd(30)}  ${date.padEnd(19)}  ${models.padEnd(8)}  ${fmtUsd(r.totals.cost.total)}`
+      `${s.sessionId.slice(0, 8)}  ${title.padEnd(20)}  ${s.project.slice(0, 25).padEnd(25)}  ${date.padEnd(12)}  ${models.padEnd(8)}  ${fmtUsd(r.totals.cost.total)}`
     );
   }
 }
