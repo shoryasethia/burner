@@ -49,9 +49,23 @@ body {
   max-width: 520px;
   margin: 0 auto 20px;
   display: flex;
+  align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  gap: 12px;
   flex-wrap: wrap;
+}
+
+.brand-mark {
+  height: 28px;
+  width: auto;
+}
+
+.toolbar-groups {
+  display: flex;
+  justify-content: flex-end;
+  gap: 16px;
+  flex-wrap: wrap;
+  flex: 1;
 }
 
 .toolbar-group {

@@ -1,4 +1,4 @@
-# burner-cc
+<p align="center"><img src="assets/logo-with-text.png" alt="Burner" width="220" /></p>
 
 Itemized dollar-and-token cost receipts for Claude Code sessions, rendered as a themed local HTML receipt.
 
@@ -7,7 +7,7 @@ Itemized dollar-and-token cost receipts for Claude Code sessions, rendered as a 
 ```
 node bin/burner-cc.js                 # latest session -> opens a receipt
 node bin/burner-cc.js <session-id>    # specific session (accepts a prefix)
-node bin/burner-cc.js --all           # every session found, one receipt each + grand total
+node bin/burner-cc.js --all           # every session found, sliding through one receipt each
 node bin/burner-cc.js list            # quick terminal table, no browser
 node bin/burner-cc.js --json          # machine-readable, no browser
 ```
