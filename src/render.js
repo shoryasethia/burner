@@ -22,6 +22,7 @@ export function renderReceipts(sessions) {
   copyFileSync(path.join(webDir, 'receipt.css'), path.join(outDir, 'receipt.css'));
   copyFileSync(path.join(webDir, 'receipt.js'), path.join(outDir, 'receipt.js'));
   copyFileSync(path.join(webDir, 'logo-mark.png'), path.join(outDir, 'logo-mark.png'));
+  copyFileSync(path.join(webDir, 'logo-with-text.png'), path.join(outDir, 'logo-with-text.png'));
   cpSync(path.join(webDir, 'vendor'), path.join(outDir, 'vendor'), { recursive: true });
 
   return outHtml;
