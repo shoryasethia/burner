@@ -1,16 +1,23 @@
 {
   "name": "burner-cc",
-  "version": "0.1.2",
-  "description": "Itemized dollar-and-token cost receipts for Claude Code sessions.",
+  "version": "0.3.0",
+  "description": "What your Claude Code sessions cost, and what they were for — itemized receipts, projects, intent tagging.",
   "type": "module",
   "bin": {
+    "burner": "bin/burner.js",
     "burner-cc": "bin/burner-cc.js"
   },
   "files": [
     "bin",
     "src",
-    "web"
+    "assets",
+    "vendor"
   ],
+  "scripts": {
+    "test": "node --test",
+    "train-prior": "node scripts/train-prior.mjs",
+    "train-prior:offline": "node scripts/train-prior.mjs --offline"
+  },
   "keywords": [
     "claude-code",
     "claude",
@@ -19,15 +26,11 @@
     "tokens",
     "cli",
     "usage",
-    "billing"
+    "analytics"
   ],
   "repository": {
     "type": "git",
     "url": "git+https://github.com/shoryasethia/burner.git"
-  },
-  "homepage": "https://github.com/shoryasethia/burner#readme",
-  "bugs": {
-    "url": "https://github.com/shoryasethia/burner/issues"
   },
   "engines": {
     "node": ">=18"

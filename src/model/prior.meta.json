@@ -1,0 +1,320 @@
+{
+  "trainedAt": "2026-10-25T10:33:58.921Z",
+  "recommended": false,
+  "datasets": [
+    {
+      "id": "dolly",
+      "name": "databricks/databricks-dolly-15k",
+      "license": "CC-BY-SA-3.0",
+      "url": "https://huggingface.co/datasets/databricks/databricks-dolly-15k",
+      "examplesUsed": 2809
+    },
+    {
+      "id": "no_robots",
+      "name": "HuggingFaceH4/no_robots",
+      "license": "CC-BY-NC-4.0",
+      "url": "https://huggingface.co/datasets/HuggingFaceH4/no_robots",
+      "examplesUsed": 2253
+    },
+    {
+      "id": "code_instructions",
+      "name": "iamtarun/python_code_instructions_18k_alpaca",
+      "license": "See dataset card (instruction-tuning; widely redistributed)",
+      "url": "https://huggingface.co/datasets/iamtarun/python_code_instructions_18k_alpaca",
+      "examplesUsed": 971
+    },
+    {
+      "id": "swe_bench",
+      "name": "princeton-nlp/SWE-bench",
+      "license": "MIT (per SWE-bench repository)",
+      "url": "https://huggingface.co/datasets/princeton-nlp/SWE-bench",
+      "examplesUsed": 1000
+    },
+    {
+      "id": "sql_context",
+      "name": "b-mc2/sql-create-context",
+      "license": "See dataset card (Spider-derived text-to-SQL context)",
+      "url": "https://huggingface.co/datasets/b-mc2/sql-create-context",
+      "examplesUsed": 762
+    },
+    {
+      "id": "github_codereview",
+      "name": "ronantakizawa/github-codereview",
+      "license": "Permissive (source repos MIT/Apache/BSD per dataset card)",
+      "url": "https://huggingface.co/datasets/ronantakizawa/github-codereview",
+      "examplesUsed": 1000
+    }
+  ],
+  "rejectedDatasets": [
+    {
+      "name": "lmsys/lmsys-chat-1m",
+      "reason": "Not accessible via public datasets-server (gated/private)."
+    },
+    {
+      "name": "irfanalee/github-code-review-full",
+      "reason": "No parquet config on datasets-server; raw JSONL paths not available without LFS pull."
+    },
+    {
+      "name": "allenai/WildChat",
+      "reason": "Ungated download works but has no intent/task labels suitable for honest mapping."
+    }
+  ],
+  "labelMappings": {
+    "dolly": {
+      "brainstorming": "planning",
+      "summarization": "writing",
+      "creative_writing": "writing",
+      "classification": "analysis",
+      "information_extraction": "research",
+      "open_qa": "learning",
+      "closed_qa": "learning",
+      "general_qa": "learning"
+    },
+    "no_robots": {
+      "Coding": "coding",
+      "Brainstorm": "planning",
+      "Summarize": "writing",
+      "Generation": "writing",
+      "Rewrite": "writing",
+      "Open QA": "learning",
+      "Closed QA": "learning",
+      "Extract": "research",
+      "Classify": "analysis",
+      "Chat": "other"
+    },
+    "code_instructions": {
+      "code_instruction": "coding"
+    },
+    "swe_bench": {
+      "bug_report": "debugging"
+    },
+    "sql_context": {
+      "text_to_sql": "analysis"
+    },
+    "github_codereview": {
+      "code_review": "review"
+    }
+  },
+  "training": {
+    "seed": 42,
+    "capPerClass": 1000,
+    "trainExamples": 7036,
+    "testExamples": 1759,
+    "minFeatureCount": 2,
+    "topNPerClass": 600
+  },
+  "examplesPerClass": {
+    "other": 795,
+    "coding": 1000,
+    "debugging": 1000,
+    "planning": 1000,
+    "writing": 1000,
+    "review": 1000,
+    "research": 1000,
+    "learning": 1000,
+    "analysis": 1000
+  },
+  "evaluation": {
+    "holdout": {
+      "accuracy": 0.6646,
+      "macroF1": 0.6315,
+      "perClass": {
+        "analysis": {
+          "precision": 0.9551,
+          "recall": 0.85,
+          "f1": 0.8995,
+          "support": 200
+        },
+        "coding": {
+          "precision": 0.8117,
+          "recall": 0.97,
+          "f1": 0.8838,
+          "support": 200
+        },
+        "debugging": {
+          "precision": 0.9879,
+          "recall": 0.815,
+          "f1": 0.8932,
+          "support": 200
+        },
+        "learning": {
+          "precision": 0.2984,
+          "recall": 0.37,
+          "f1": 0.3304,
+          "support": 200
+        },
+        "other": {
+          "precision": 0.5502,
+          "recall": 1,
+          "f1": 0.7098,
+          "support": 159
+        },
+        "planning": {
+          "precision": 0.4663,
+          "recall": 0.9,
+          "f1": 0.6143,
+          "support": 200
+        },
+        "research": {
+          "precision": 0.3333,
+          "recall": 0.01,
+          "f1": 0.0194,
+          "support": 200
+        },
+        "review": {
+          "precision": 0.9766,
+          "recall": 0.835,
+          "f1": 0.9003,
+          "support": 200
+        },
+        "writing": {
+          "precision": 0.7792,
+          "recall": 0.3,
+          "f1": 0.4332,
+          "support": 200
+        }
+      },
+      "majorityBaseline": 0.1137,
+      "majorityClass": "debugging",
+      "evaluated": 1759,
+      "confidentAccuracy": 0.708,
+      "confidentCoverage": 0.8977,
+      "confidentThreshold": 0.6
+    },
+    "crossDataset": {
+      "perDataset": {
+        "dolly": {
+          "skipped": false,
+          "testExamples": 2809,
+          "overlappingCategories": [
+            "writing",
+            "research",
+            "learning",
+            "planning",
+            "analysis"
+          ],
+          "accuracy": 0.3407,
+          "macroF1": 0.2643,
+          "majorityBaseline": 0.3158
+        },
+        "no_robots": {
+          "skipped": false,
+          "testExamples": 2253,
+          "overlappingCategories": [
+            "planning",
+            "writing",
+            "learning",
+            "research",
+            "coding",
+            "analysis"
+          ],
+          "accuracy": 0.2166,
+          "macroF1": 0.1463,
+          "majorityBaseline": 0.3529
+        },
+        "code_instructions": {
+          "skipped": true,
+          "reason": "fewer than 2 overlapping categories"
+        },
+        "swe_bench": {
+          "skipped": true,
+          "reason": "fewer than 2 overlapping categories"
+        },
+        "sql_context": {
+          "skipped": true,
+          "reason": "fewer than 2 overlapping categories"
+        },
+        "github_codereview": {
+          "skipped": true,
+          "reason": "fewer than 2 overlapping categories"
+        }
+      },
+      "avgMacroF1": 0.2053,
+      "avgAccuracy": 0.2787,
+      "datasetsScored": 2
+    }
+  },
+  "sanity": [
+    {
+      "prompt": "the login page crashes when I click submit",
+      "category": "coding",
+      "confidence": 0.738
+    },
+    {
+      "prompt": "write a PRD for onboarding new users",
+      "category": "coding",
+      "confidence": 0.924
+    },
+    {
+      "prompt": "summarize this Q3 sales spreadsheet into bullet points for leadership",
+      "category": "planning",
+      "confidence": 0.586
+    },
+    {
+      "prompt": "what does this function do? explain like I am new to the codebase",
+      "category": "planning",
+      "confidence": 0.902
+    },
+    {
+      "prompt": "review my PR for security issues before I merge",
+      "category": "review",
+      "confidence": 0.99
+    },
+    {
+      "prompt": "add a dark mode toggle to the settings page using our existing theme tokens",
+      "category": "review",
+      "confidence": 0.844
+    },
+    {
+      "prompt": "why is my Jest test failing with \"cannot read property of undefined\"",
+      "category": "review",
+      "confidence": 0.349
+    },
+    {
+      "prompt": "compare Postgres vs SQLite for our side project and recommend one",
+      "category": "learning",
+      "confidence": 0.472
+    },
+    {
+      "prompt": "draft an email to the customer apologizing for the outage",
+      "category": "coding",
+      "confidence": 0.605
+    },
+    {
+      "prompt": "plot month-over-month revenue from this CSV and call out anomalies",
+      "category": "coding",
+      "confidence": 0.704
+    },
+    {
+      "prompt": "break the epic into user stories with acceptance criteria",
+      "category": "other",
+      "confidence": 0.992
+    },
+    {
+      "prompt": "find where we authenticate API keys in this repo",
+      "category": "coding",
+      "confidence": 0.98
+    },
+    {
+      "prompt": "help me understand what a binary search tree is",
+      "category": "writing",
+      "confidence": 0.853
+    },
+    {
+      "prompt": "refactor this React component to use hooks instead of a class",
+      "category": "review",
+      "confidence": 0.9
+    },
+    {
+      "prompt": "check my migration script for data loss risks",
+      "category": "coding",
+      "confidence": 0.995
+    },
+    {
+      "prompt": "write release notes for version 2.4 from these commit messages",
+      "category": "debugging",
+      "confidence": 0.78
+    }
+  ],
+  "limitations": "Labels come from general instruction-tuning corpora (Q&A, summarization, coding exercises, bug reports, SQL questions, code-review diffs), not from Claude Code session logs. Categories such as planning and debugging are represented by narrower proxies (brainstorming prompts, SWE-bench issue text). Expect confusion between writing vs research, coding vs debugging, and analysis vs research on short prompts. The model should be treated as a weak default prior until a project trains on its own tagged sessions."
+}

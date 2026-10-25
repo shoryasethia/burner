@@ -206,6 +206,21 @@ body {
 
 .line .label { flex: 1; }
 .line .label.indent { padding-left: 14px; color: var(--dim); font-size: 11px; }
+.line .label.indent2 { padding-left: 28px; color: var(--dim); font-size: 11px; }
+
+.group-heading {
+  font-weight: bold;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  margin-top: 8px;
+}
+
+.note {
+  font-size: 10px;
+  color: var(--dim);
+  line-height: 1.45;
+  margin-top: 8px;
+}
 .line .tok { color: var(--dim); font-size: 11px; min-width: 72px; text-align: right; }
 .line .amt { font-weight: bold; min-width: 60px; text-align: right; }
 

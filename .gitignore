@@ -1,3 +1,21 @@
 node_modules/
-.burner-cc-cache/
+.DS_Store
+Thumbs.db
+
+# Maintainer: train-prior dataset cache (~100MB+). Regenerate with npm run train-prior.
+.data/
+
+# Debug scratch from dev / tests
+_t.js
+_tmp-*.js
+
+.env
+.env.*
 *.log
+*.tgz
+
+# Machine-local Claude Code (install writes to ~/.claude, not the repo)
+.claude/
+
+# User runtime data (lives in ~/.burner)
+.burner/

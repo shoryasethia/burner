@@ -82,7 +82,7 @@ function receiptHtml(session, index) {
       ).join('')
     : '';
 
-  const activitySection = activityHtml(session.activity);
+  const activitySection = attributedHtml(session);
 
   const authCode = session.sessionId.slice(0, 4).toUpperCase() + '-' + (seed % 9999);
   const bc = barcode(session.totals.cost.total, seed);
@@ -135,26 +135,82 @@ function receiptHtml(session, index) {
   `;
 }
 
-function activityHtml(activity) {
-  if (!activity) return '';
-  const mcpEntries = Object.entries(activity.mcp ?? {});
-  const skillEntries = Object.entries(activity.skills ?? {});
-  const webEntries = Object.entries(activity.web ?? {});
-  if (!mcpEntries.length && !skillEntries.length && !webEntries.length) return '';
+function esc(value) {
+  return String(value).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
 
-  const row = (label, count) =>
-    `<div class="line"><span class="label indent">${label}</span><span class="tok">${count}×</span><span class="amt"></span></div>`;
+function money(cost, unpriced) {
+  const text = fmtUsd(cost);
+  return unpriced ? `${text}<span class="unpriced-flag">*</span>` : text;
+}
+
+function attrRow(label, tok, amt, level, title) {
+  const indent = level === 2 ? ' indent2' : level === 1 ? ' indent' : '';
+  const tip = title ? ` title="${esc(title)}"` : '';
+  return `<div class="line"${tip}><span class="label${indent}">${esc(label)}</span><span class="tok">${tok}</span><span class="amt">${amt}</span></div>`;
+}
+
+function contextCells(row) {
+  const unseen = row.calls > 0 && row.contextMissing === row.calls;
+  if (unseen) return { tok: '—', amt: '', title: 'no following request, so the result is not in a later turn' };
+  const partial = row.contextMissing > 0 ? `${row.contextMissing} call${row.contextMissing === 1 ? '' : 's'} had no following request` : '';
+  return { tok: fmtTok(row.contextTokens), amt: money(row.contextCost, row.unpriced), title: partial };
+}
+
+function bucketLines(row, label, unit, level) {
+  const context = contextCells(row);
+  const lines = [
+    attrRow(label, `${row.calls} ${unit}`, '', level),
+    attrRow('call output', fmtTok(row.outputTokens), money(row.outputCost, row.unpriced), level + 1),
+    attrRow('context added', context.tok, context.amt, level + 1, context.title),
+  ];
+  for (const via of row.via ?? []) {
+    lines.push(attrRow(`via ${via.skill}`, `${via.calls} ${unit}`, '', level + 1));
+  }
+  return lines.join('');
+}
+
+function attributedHtml(session) {
+  const attr = session.attribution;
+  const mcp = attr?.mcp ?? [];
+  const skills = attr?.skills ?? [];
+  const webEntries = Object.entries(session.activity?.web ?? {});
+  if (!mcp.length && !skills.length && !webEntries.length) return '';
+
+  const servers = mcp.map((server) => {
+    const tools = server.tools.map((tool) => bucketLines(tool, tool.name, tool.calls === 1 ? 'call' : 'calls', 1)).join('');
+    const totalCost = server.outputCost == null && server.contextCost == null
+      ? null
+      : (server.outputCost ?? 0) + (server.contextCost ?? 0);
+    const total = server.tools.length > 1
+      ? attrRow('total', '', money(totalCost, server.unpriced), 1)
+      : '';
+    return `<div class="group-heading">MCP: ${esc(server.displayName)}</div>${tools}${total}`;
+  }).join('');
+
+  const skillLines = skills.map((skill) => bucketLines(skill, skill.name, skill.calls === 1 ? 'turn' : 'turns', 1)).join('');
+  const skillBlock = skills.length ? `<div class="group-heading">SKILLS</div>${skillLines}` : '';
+  const webBlock = webEntries.length
+    ? `<div class="group-heading">WEB</div>` + webEntries.map(([tool, count]) => attrRow(tool, `${count} ${count === 1 ? 'call' : 'calls'}`, '', 1)).join('')
+    : '';
+  const note = mcp.length || skills.length ? `<div class="note">${esc(attr.note)}</div>` : '';
 
   return `
     <hr class="rule" />
-    <div class="model-heading">ACTIVITY LOG <span class="unpriced-flag" title="call counts only — not split into a dollar cost, since a turn's token cost can't be attributed to one tool call inside it">*</span></div>
-    ${mcpEntries.map(([server, n]) => row(`MCP: ${server}`, n)).join('')}
-    ${skillEntries.map(([skill, n]) => row(`SKILL: ${skill}`, n)).join('')}
-    ${webEntries.map(([tool, n]) => row(tool.toUpperCase(), n)).join('')}
+    <div class="model-heading">ATTRIBUTED</div>
+    ${servers}
+    ${skillBlock}
+    ${webBlock}
+    ${note}
   `;
 }
 
 function tipFor(session) {
+  const servers = [...(session.attribution?.mcp ?? [])].sort((a, b) => b.contextTokens - a.contextTokens);
+  const top = servers[0];
+  if (top && top.contextTokens > 20000) {
+    return `MCP ${top.displayName.toUpperCase()} ADDED ${fmtTok(top.contextTokens)} OF CONTEXT`;
+  }
   const t = session.totals.tokens;
   const cacheEff = t.cacheRead / (t.cacheRead + t.input + t.cacheWrite5m + t.cacheWrite1h || 1);
   if (cacheEff < 0.3 && (t.cacheWrite5m + t.cacheWrite1h) > 20000) {
@@ -166,7 +222,8 @@ function tipFor(session) {
   if (t.output > t.input) {
     return 'OUTPUT-HEAVY SESSION — CONSIDER SHORTER RESPONSES';
   }
-  return 'DISABLE UNUSED MCP SERVERS BEFORE CHECKOUT';
+  if (servers.length) return 'DISABLE UNUSED MCP SERVERS BEFORE CHECKOUT';
+  return 'KEEP TURNS SHORT SO THE CACHE STAYS WARM';
 }
 
 function textReceipt(session) {
@@ -190,14 +247,26 @@ function textReceipt(session) {
   lines.push('-'.repeat(40));
   const totalLabel = session.billingMode === 'subscription-likely' ? 'API-EQUIVALENT VALUE' : 'TOTAL';
   lines.push(`${totalLabel}: ${fmtUsd(session.totals.cost.total)}`);
-  const mcpEntries = Object.entries(session.activity?.mcp ?? {});
-  const skillEntries = Object.entries(session.activity?.skills ?? {});
+  const mcp = session.attribution?.mcp ?? [];
+  const skills = session.attribution?.skills ?? [];
   const webEntries = Object.entries(session.activity?.web ?? {});
-  if (mcpEntries.length || skillEntries.length || webEntries.length) {
-    lines.push('ACTIVITY (not itemized in cost above):');
-    mcpEntries.forEach(([s, n]) => lines.push(`  mcp:${s}   ${n}x`));
-    skillEntries.forEach(([s, n]) => lines.push(`  skill:${s}   ${n}x`));
-    webEntries.forEach(([s, n]) => lines.push(`  ${s}   ${n}x`));
+  if (mcp.length || skills.length || webEntries.length) {
+    lines.push('ATTRIBUTED (already inside the total):');
+    for (const server of mcp) {
+      lines.push(`  MCP ${server.displayName}`);
+      for (const tool of server.tools) {
+        lines.push(`    ${tool.name}  ${tool.calls} ${tool.calls === 1 ? 'call' : 'calls'}`);
+        lines.push(`      call output     ${fmtTok(tool.outputTokens)}   ${fmtUsd(tool.outputCost)}`);
+        lines.push(`      context added   ${tool.contextMissing === tool.calls ? '—' : fmtTok(tool.contextTokens)}   ${tool.contextMissing === tool.calls ? '' : fmtUsd(tool.contextCost)}`);
+      }
+    }
+    for (const skill of skills) {
+      lines.push(`  SKILL ${skill.name}  ${skill.calls} ${skill.calls === 1 ? 'turn' : 'turns'}`);
+      lines.push(`    call output     ${fmtTok(skill.outputTokens)}   ${fmtUsd(skill.outputCost)}`);
+      lines.push(`    context added   ${skill.contextMissing === skill.calls ? '—' : fmtTok(skill.contextTokens)}   ${skill.contextMissing === skill.calls ? '' : fmtUsd(skill.contextCost)}`);
+    }
+    webEntries.forEach(([name, count]) => lines.push(`  ${name}  ${count} ${count === 1 ? 'call' : 'calls'}`));
+    if (mcp.length || skills.length) lines.push(session.attribution.note);
   }
   lines.push('~ burner ~');
   return lines.join('\n');
@@ -234,9 +303,10 @@ function render() {
     : '';
 
   const onSubscription = currentData[0]?.billingMode === 'subscription-likely';
+  const once = 'Each API request is counted once — the transcript repeats its usage on every content block.';
   const disclaimer = onSubscription
-    ? 'Estimates, not official billing. Looks like a Pro/Max/Team plan, not pay-per-token — shown as API-equivalent value, not an actual charge.'
-    : 'Estimates, not official billing.';
+    ? `Estimates, not official billing. Looks like a Pro/Max/Team plan, not pay-per-token — shown as API-equivalent value, not an actual charge. ${once}`
+    : `Estimates, not official billing. ${once}`;
 
   root.innerHTML =
     `<div class="carousel">${arrows}<div class="carousel-track" id="track">${slides}</div></div>${dots}` +

@@ -1,17 +1,20 @@
-import { parseTranscript, timeRange, mergeActivity } from './parse.js';
+import { parseTranscript, timeRange, mergeParsed } from './parse.js';
 import { lookupPricing, costFor, loadPricingTable } from './pricing.js';
 
+// Shown on the receipt and in --json. The dollars below are a slice of the
+// session total, not a second charge.
+export const ATTRIBUTION_NOTE =
+  'Call output is that API request\'s output tokens. Context added is the next request\'s fresh input and cache write — an upper bound, since it also includes the call message. These amounts are already inside the session total. MCP tool schemas cached in the prompt are not in the transcript.';
+
 function summarizeTurns(turns, table) {
-  // Group by the *priced* model identity (post lookup), not the raw string,
-  // so aliases like "sonnet" fold into the concrete model they resolved to.
   const byModel = new Map();
 
   for (const t of turns) {
-    const priced = lookupPricing(t.model, table);
-    const key = priced.displayName;
+    const key = t.model;
     if (!byModel.has(key)) {
+      const priced = lookupPricing(t.model, table);
       byModel.set(key, {
-        displayName: priced.displayName,
+        rawModel: t.model,
         fidelity: priced.fidelity,
         rates: priced.rates,
         tokens: { input: 0, output: 0, cacheWrite5m: 0, cacheWrite1h: 0, cacheRead: 0 },
@@ -31,7 +34,7 @@ function summarizeTurns(turns, table) {
   for (const bucket of byModel.values()) {
     const cost = costFor(bucket.tokens, bucket.rates);
     models.push({
-      displayName: bucket.displayName,
+      rawModel: bucket.rawModel,
       fidelity: bucket.fidelity,
       turnCount: bucket.turnCount,
       tokens: bucket.tokens,
@@ -67,7 +70,7 @@ function sumTokens(models) {
 // Groups subagent runs by their agentType (from the sidecar .meta.json),
 // each with its own real, measured cost — instead of lumping every
 // subagent run into one "SUBAGENTS" blob.
-function summarizeSubagentsByType(subagentFiles, table) {
+export function summarizeSubagentsByType(subagentFiles, table) {
   const byType = new Map();
 
   for (const { file, meta } of subagentFiles) {
@@ -86,22 +89,125 @@ function summarizeSubagentsByType(subagentFiles, table) {
   }));
 }
 
+export function activityFrom(parsed) {
+  const mcp = {};
+  for (const server of Object.values(parsed.mcp)) {
+    const calls = Object.values(server.tools).reduce((sum, bucket) => sum + bucket.calls, 0);
+    if (calls) mcp[server.displayName] = (mcp[server.displayName] ?? 0) + calls;
+  }
+  const skills = {};
+  for (const [name, bucket] of Object.entries(parsed.skills)) skills[name] = bucket.calls;
+  return { mcp, skills, web: parsed.web };
+}
+
+function priceBucket(bucket, table) {
+  let outputCost = 0;
+  let contextCost = 0;
+  let pricedOutput = 0;
+  let pricedContext = 0;
+  let unpriced = false;
+
+  for (const [model, tokens] of Object.entries(bucket.outputByModel)) {
+    const { rates } = lookupPricing(model, table);
+    if (!rates) {
+      unpriced = true;
+      continue;
+    }
+    outputCost += (tokens / 1_000_000) * rates.output;
+    pricedOutput += tokens;
+  }
+
+  for (const [model, usage] of Object.entries(bucket.contextByModel)) {
+    const { rates } = lookupPricing(model, table);
+    if (!rates) {
+      unpriced = true;
+      continue;
+    }
+    const cost = costFor({ ...usage, output: 0, cacheRead: 0 }, rates);
+    contextCost += cost.input + cost.cacheWrite;
+    pricedContext += usage.input + usage.cacheWrite5m + usage.cacheWrite1h;
+  }
+
+  return {
+    outputCost: pricedOutput === 0 && bucket.outputTokens > 0 ? null : outputCost,
+    contextCost: pricedContext === 0 && bucket.contextTokens > 0 ? null : contextCost,
+    unpriced,
+  };
+}
+
+function finishBucket(bucket, table) {
+  const priced = priceBucket(bucket, table);
+  const via = Object.entries(bucket.via)
+    .map(([skill, calls]) => ({ skill, calls }))
+    .sort((a, b) => b.calls - a.calls);
+  return {
+    calls: bucket.calls,
+    outputTokens: bucket.outputTokens,
+    contextTokens: bucket.contextTokens,
+    contextMissing: bucket.contextMissing,
+    outputCost: priced.outputCost,
+    contextCost: priced.contextCost,
+    unpriced: priced.unpriced,
+    ...(via.length ? { via } : {}),
+  };
+}
+
+function sumField(rows, field) {
+  if (rows.every((row) => row[field] == null)) return null;
+  return rows.reduce((sum, row) => sum + (row[field] ?? 0), 0);
+}
+
+function byWeight(a, b) {
+  const cost = (row) => (row.contextCost ?? 0) + (row.outputCost ?? 0);
+  return cost(b) - cost(a) || (b.contextTokens + b.outputTokens) - (a.contextTokens + a.outputTokens);
+}
+
+export function priceAttribution(parsed, table) {
+  const mcp = Object.entries(parsed.mcp).map(([slug, server]) => {
+    const tools = Object.entries(server.tools)
+      .map(([name, bucket]) => ({ name, ...finishBucket(bucket, table) }))
+      .sort(byWeight);
+    return {
+      server: slug,
+      displayName: server.displayName,
+      calls: tools.reduce((sum, tool) => sum + tool.calls, 0),
+      outputTokens: tools.reduce((sum, tool) => sum + tool.outputTokens, 0),
+      contextTokens: tools.reduce((sum, tool) => sum + tool.contextTokens, 0),
+      contextMissing: tools.reduce((sum, tool) => sum + tool.contextMissing, 0),
+      outputCost: sumField(tools, 'outputCost'),
+      contextCost: sumField(tools, 'contextCost'),
+      unpriced: tools.some((tool) => tool.unpriced),
+      tools,
+    };
+  }).sort(byWeight);
+
+  const skills = Object.entries(parsed.skills)
+    .map(([name, bucket]) => ({ name, ...finishBucket(bucket, table) }))
+    .sort(byWeight);
+
+  return { note: ATTRIBUTION_NOTE, mcp, skills };
+}
+
 // Builds one receipt object for a discovered session (main transcript +
 // any subagent transcripts spawned within it). `table` is the pricing
 // table already resolved once via loadPricingTable() by the caller.
+// Attribution dollars are not added into totals — they are a slice of them.
 export function buildReceipt(session, table) {
-  const { turns: mainTurns, activity: mainActivity } = parseTranscript(session.mainFile);
+  const main = parseTranscript(session.mainFile);
   const subagentParsed = session.subagentFiles.map(({ file }) => parseTranscript(file));
+  const mainTurns = main.turns;
   const subagentTurns = subagentParsed.flatMap((p) => p.turns);
+  const merged = mergeParsed([main, ...subagentParsed]);
 
   const mainModels = summarizeTurns(mainTurns, table);
   const subagentGroups = summarizeSubagentsByType(session.subagentFiles, table);
   const allSubagentModels = subagentGroups.flatMap((g) => g.models);
 
-  const activity = mergeActivity([mainActivity, ...subagentParsed.map((p) => p.activity)]);
+  const activity = activityFrom(merged);
+  const attribution = priceAttribution(merged, table);
 
   const { startedAt, endedAt } = timeRange([...mainTurns, ...subagentTurns]);
-  const hasUnpriced = [...mainModels, ...allSubagentModels].some((m) => !m.cost);
+  const hasUnpriced = [...mainModels, ...allSubagentModels].some((m) => m.fidelity === 'unpriced');
 
   const totals = {
     tokens: sumTokens([...mainModels, ...allSubagentModels]),
@@ -119,6 +225,7 @@ export function buildReceipt(session, table) {
     models: mainModels,
     subagentGroups,
     activity,
+    attribution,
     totals,
     hasUnpriced,
     pricingSource: table.source,

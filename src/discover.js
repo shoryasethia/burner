@@ -1,9 +1,9 @@
 import { readdirSync, statSync, readFileSync, existsSync } from 'node:fs';
 import path from 'node:path';
-import os from 'node:os';
+import { CLAUDE_HOME } from './config.js';
 
-function claudeProjectsRoot() {
-  return path.join(os.homedir(), '.claude', 'projects');
+function claudeProjectsRoot(claudeHome = CLAUDE_HOME) {
+  return path.join(claudeHome, 'projects');
 }
 
 function walk(dir, out = []) {
@@ -66,15 +66,15 @@ function readSessionTitle(mainFile) {
       }
     }
   }
-  return title || slug || null;
+  return { title, slug };
 }
 
 // A session is identified by its top-level "<sessionId>.jsonl" file. Any
 // "<sessionId>/subagents/agent-*.jsonl" files sit alongside it and are
 // billed separately by the API, so their cost is real but attributed back
 // to the parent session rather than shown as their own session.
-export function discoverSessions() {
-  const root = claudeProjectsRoot();
+export function discoverSessions(claudeHome) {
+  const root = claudeProjectsRoot(claudeHome);
   const files = walk(root);
 
   const sessions = new Map();
@@ -103,7 +103,10 @@ export function discoverSessions() {
 
   for (const s of result) {
     s.mtime = statSync(s.mainFile).mtimeMs;
-    s.title = readSessionTitle(s.mainFile);
+    const { title, slug } = readSessionTitle(s.mainFile) ?? {};
+    s.customTitle = title ?? null;
+    s.slug = slug ?? null;
+    s.title = title || slug || null;
   }
 
   result.sort((a, b) => b.mtime - a.mtime);
