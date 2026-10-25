@@ -85,6 +85,10 @@ test('install puts the skill in the global Claude dir and applies levels', async
 
   st = applyTagging(saveConfig({ ...loadConfig(), tagging: { ...cfg.tagging, level: 'manual' } }));
   assert.equal(readFileSync(path.join(claudeHome, 'CLAUDE.md'), 'utf-8'), '# my rules\nbe nice\n');
+
+  const status = JSON.parse(cli(['status']));
+  assert.equal(status.install.devCheckout, true, 'repo bin/burner.js should report dev checkout');
+  assert.match(readFileSync(path.join(claudeHome, 'skills', 'burner-tag', 'SKILL.md'), 'utf-8'), /node ".*burner\.js" tag/);
 });
 
 test('burner tag from inside a session resolves it by cwd and enforces project categories', async () => {

@@ -32,16 +32,18 @@ function pathNorm(p) {
   return path.resolve(p).replace(/\\/g, '/').toLowerCase();
 }
 
-/** True when the running entrypoint is this repo's bin/burner.js (not npm global link). */
+/** True when this process is the burner repo checkout, not npm's installed `burner-cc` package. */
 export function isDevCheckout() {
   const entry = process.argv[1] ? path.resolve(process.argv[1]) : '';
-  return entry && pathNorm(entry) === pathNorm(BIN);
+  if (!entry || pathNorm(entry) !== pathNorm(BIN)) return false;
+  const pkgRoot = pathNorm(path.resolve(__dirname, '..'));
+  return !/\/node_modules\/burner-cc$/.test(pkgRoot);
 }
 
-/** Shell command users should run (global npm: `burner …`; dev checkout: `node …/burner.js …`). */
+/** Command for skills/hooks: always `node` + absolute burner.js (works without `burner` on PATH). */
 export function burnerShell(sub = '') {
   const tail = sub ? ` ${sub}` : '';
-  return isDevCheckout() ? `${nodeCmd()}${tail}` : `${NPM_CLI}${tail}`;
+  return `${nodeCmd()}${tail}`;
 }
 
 /** Paste into Claude Code / Cursor chat if /burner-tag is missing after you changed categories. */

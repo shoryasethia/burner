@@ -223,3 +223,8 @@ test('parseTranscript copes with gateway / on-prem usage shapes', async () => {
   assert.equal(none.turns.length, 2);
   assert.ok(none.turns.every((x) => x.unreported && x.model === 'qwen3-coder:30b'));
 });
+
+test('burnerShell always uses node plus absolute burner.js path', async () => {
+  const { burnerShell } = await import('../src/install.js');
+  assert.match(burnerShell('install'), /^node ".*[\\/]bin[\\/]burner\.js" install$/);
+});
