@@ -40,9 +40,8 @@ export const UNTAGGED = { id: 'untagged', label: 'Untagged', color: '#a8a29e', d
 // Tagging levels, lowest to highest — mirrors Claude Code's effort slider.
 export const TAGGING_LEVELS = [
   { id: 'off', label: 'Off', description: 'Never tag. Sessions stay untagged unless the project has a default. Burner removes the global /burner-tag skill and hooks from ~/.claude.' },
-  { id: 'manual', label: 'Manual', description: 'Only when you run /burner-tag. Burner keeps the skill installed globally; no CLAUDE.md reminder.' },
-  { id: 'session', label: 'Session end', description: 'Tag when a session ends: SessionEnd hook + your Anthropic model id (below), or /burner-tag via CLAUDE.md if no model id. Burner updates ~/.claude when you move the slider.' },
-  { id: 'task', label: 'Every task', description: 'Claude tags after each distinct task (/burner-tag with --task). Burner adds a CLAUDE.md block and keeps the skill installed.' },
+  { id: 'manual', label: 'Manual', description: 'Only when you run /burner-tag. Burner keeps the skill installed globally.' },
+  { id: 'session', label: 'Session end', description: 'SessionEnd hook tags using your trained local model (and project default). No API calls and no CLAUDE.md edits.' },
 ];
 
 export function defaultConfig() {
@@ -53,7 +52,6 @@ export function defaultConfig() {
     tagging: {
       level: 'manual',
       learned: true,
-      endModel: '',
     },
     ui: { theme: 'paper', range: 'all', customFrom: '', customTo: '' },
   };
@@ -94,7 +92,8 @@ function normalizeConfig(raw) {
   cfg.tagging = { ...base.tagging, ...(cfg.tagging ?? {}) };
   delete cfg.tagging.auto;
   if (cfg.tagging.level === 'auto') cfg.tagging.level = 'manual';
-  cfg.tagging.endModel = String(cfg.tagging.endModel ?? '').trim();
+  if (cfg.tagging.level === 'task') cfg.tagging.level = 'manual';
+  delete cfg.tagging.endModel;
   const ui = cfg.ui ?? {};
   cfg.ui = {
     theme: THEMES.includes(ui.theme) ? ui.theme : 'paper',

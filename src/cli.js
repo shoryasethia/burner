@@ -25,7 +25,7 @@ const HELP = `
     burner tag <category> [--session ID] [--reason TEXT] [--task]
     burner tag --clear [--session ID]
     burner install                  install /${SKILL_NAME} globally + apply the tagging level
-    burner uninstall                remove the skill and CLAUDE.md block
+    burner uninstall                remove the skill and SessionEnd hook
     burner status
 
   Pricing & model
@@ -119,13 +119,13 @@ async function main() {
   if (cmd === 'install') {
     const st = applyTagging(loadConfig());
     console.log(`  /${st.skillName} -> ${st.skillPath}${st.skillInstalled ? '' : ' (not installed: level is off)'}`);
-    console.log(`  CLAUDE.md block: ${st.claudeMdLevel ?? 'none'}`);
-    if (st.sessionEndHook) console.log(`  SessionEnd hook: on (model ${st.endModel || '?'})`);
+    if (st.legacyClaudeMd) console.log('  legacy CLAUDE.md burner block: still present (run install to strip)');
+    if (st.sessionEndHook) console.log('  SessionEnd hook: on (local auto-tag)');
     return;
   }
   if (cmd === 'uninstall') {
     uninstall();
-    return console.log('  removed skill and CLAUDE.md block');
+    return console.log('  removed skill, hook, and legacy CLAUDE.md block');
   }
   if (cmd === 'status') {
     const cfg = loadConfig();

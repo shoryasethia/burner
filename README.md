@@ -29,7 +29,7 @@ burner serve           # same; --port N, --no-open
 burner install         # global /burner-tag skill + tagging level from ~/.burner/config.yaml
 ```
 
-Settings covers **projects**, **categories**, **pricing** (pin/refresh per model), and **tagging** (slider, session-end model, train your intent model).
+Settings covers **projects**, **categories**, **pricing** (pin/refresh per model), and **tagging** (slider, train your intent model).
 
 ## Commands
 
@@ -67,10 +67,9 @@ Resolution order:
 |--------|----------|
 | Off | Removes global skill / hooks |
 | Manual | `/burner-tag` only; skill stays installed |
-| Session end | SessionEnd hook + optional Anthropic model id, or CLAUDE.md asks Claude to tag via `/burner-tag` |
-| Every task | CLAUDE.md asks Claude to tag each task (`--task`) |
+| Session end | SessionEnd hook tags with your **local** trained model (no API, no CLAUDE.md) |
 
-Moving the slider (or saving session-end model) updates `~/.claude` automatically. Use **Train from my tags** in Settings for a local naive-Bayes model (`~/.burner/model/intent-nb.json`). Training is pure Node — no GPU or Python. CLI `burner model train` does the same; `--prior` / `--swe-chat` are optional extras.
+Moving the tagging slider updates `~/.claude` automatically. Use **Train from my tags** in Settings for a local naive-Bayes model (`~/.burner/model/intent-nb.json`). Training is pure Node — no GPU or Python. CLI `burner model train` does the same; `--prior` / `--swe-chat` are optional extras.
 
 ## Tokens & pricing
 

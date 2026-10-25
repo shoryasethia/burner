@@ -1,11 +1,18 @@
-// SessionEnd hook: ask a small/fast model what the session was for, then tag it.
+// SessionEnd hook: tag from local signals only (learned model, project default). No API calls.
 
-import { readFileSync } from 'node:fs';
 import { discoverSessions } from './discover.js';
 import { parseTranscript } from './parse.js';
-import { loadConfig } from './config.js';
+import { loadConfig, UNTAGGED } from './config.js';
 import { loadTags, setTag, resolveSessionProject } from './tags.js';
-import { allowedCategories, buildDigest } from './classifier.js';
+import {
+  allowedCategories,
+  buildDigest,
+  loadLearned,
+  predictLearned,
+  resolveCategory,
+} from './classifier.js';
+
+const SESSION_END_CONFIDENCE = 0.45;
 
 export async function readHookPayload() {
   try {
@@ -19,53 +26,11 @@ export async function readHookPayload() {
   }
 }
 
-function pickCategory(text, allowed) {
-  const t = String(text ?? '').toLowerCase();
-  for (const id of allowed) {
-    if (t === id || t.includes(id)) return id;
-  }
-  const word = t.match(/[a-z][a-z0-9_-]*/)?.[0];
-  if (word && allowed.includes(word)) return word;
-  return null;
-}
-
-async function classifyWithModel(digest, categories, model) {
-  const key = process.env.ANTHROPIC_API_KEY;
-  if (!key) throw new Error('ANTHROPIC_API_KEY is not set (needed for session-end tagging)');
-  const lines = categories.map((c) => `${c.id}: ${c.description || c.label}`).join('\n');
-  const prompts = (digest.prompts ?? []).slice(0, 6).map((p, i) => `${i + 1}. ${p}`).join('\n');
-  const tools = (digest.tools ?? []).slice(0, 8).map(([s, n]) => `${s} x${n}`).join(', ');
-  const user = `Pick exactly one category id for this Claude Code session.
-
-Categories (reply with only the id):
-${lines}
-
-Session title: ${digest.title ?? '—'}
-Project: ${digest.project ?? '—'}
-User prompts:
-${prompts || '(none)'}
-Tools used: ${tools || '(none)'}`;
-
-  const res = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: {
-      'x-api-key': key,
-      'anthropic-version': '2023-06-01',
-      'content-type': 'application/json',
-    },
-    body: JSON.stringify({ model, max_tokens: 40, messages: [{ role: 'user', content: user }] }),
-    signal: AbortSignal.timeout(45_000),
-  });
-  if (!res.ok) throw new Error(`Anthropic API ${res.status}: ${(await res.text()).slice(0, 300)}`);
-  const data = await res.json();
-  const text = data.content?.find((b) => b.type === 'text')?.text ?? '';
-  return text.trim();
-}
-
-export async function tagSessionAtEnd({ sessionId, model } = {}) {
+export async function tagSessionAtEnd({ sessionId } = {}) {
   const cfg = loadConfig();
-  const endModel = (model ?? cfg.tagging?.endModel ?? '').trim();
-  if (!endModel) return { ok: false, skipped: true, reason: 'no endModel configured' };
+  if ((cfg.tagging?.level ?? 'manual') !== 'session') {
+    return { ok: false, skipped: true, reason: 'tagging level is not session' };
+  }
 
   const id = sessionId ?? process.env.CLAUDE_SESSION_ID;
   if (!id || id.includes('${')) return { ok: false, skipped: true, reason: 'no session id' };
@@ -84,11 +49,25 @@ export async function tagSessionAtEnd({ sessionId, model } = {}) {
   const allowed = allowedCategories(project, cfg);
   const allowedIds = allowed.map((c) => c.id);
   const digest = buildDigest(parsed, { title: s.customTitle ?? parsed.digest.aiTitle, projectName: project.name });
+  const learned = loadLearned();
 
-  const answer = await classifyWithModel(digest, allowed, endModel);
-  const category = pickCategory(answer.split(/\r?\n/)[0], allowedIds);
-  if (!category) return { ok: false, error: `model answer not a category: ${answer.slice(0, 80)}` };
+  let resolved = resolveCategory({ tag: existing, project, cfg, digest, learned });
+  if (resolved.category === UNTAGGED.id && learned) {
+    const p = predictLearned(learned, digest, allowedIds);
+    if (p && p.confidence >= SESSION_END_CONFIDENCE) {
+      resolved = { category: p.category, source: 'session-end', confidence: p.confidence };
+    }
+  }
 
-  setTag(s.sessionId, { category, source: 'end-model', reason: answer.slice(0, 80) });
-  return { ok: true, sessionId: s.sessionId, category, model: endModel };
+  if (resolved.category === UNTAGGED.id || resolved.source === 'none') {
+    return { ok: true, skipped: true, reason: 'no confident category' };
+  }
+
+  setTag(s.sessionId, {
+    category: resolved.category,
+    source: 'session-end',
+    reason: resolved.source === 'project' ? 'project default' : `auto (${resolved.source})`,
+    confidence: resolved.confidence ?? null,
+  });
+  return { ok: true, sessionId: s.sessionId, category: resolved.category, source: resolved.source };
 }

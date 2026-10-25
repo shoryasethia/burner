@@ -598,9 +598,8 @@ function taggingSetupPills(level, ins, tagging, learned){
     pills.appendChild(h('span', {class:'badge dimmed', text:'skill removed'}));
   } else {
     pills.appendChild(h('span', {class:'badge' + (ins.skillInstalled ? ' ok' : ''), text:'/' + (ins.skillName || 'burner-tag') + (ins.skillInstalled ? ' \u2713' : ' \u2717')}));
-    var md = ins.claudeMdLevel ? ('CLAUDE.md ' + ins.claudeMdLevel) : 'CLAUDE.md off';
-    if (level === 'session' && ins.sessionEndHook) md = 'SessionEnd hook \u2713';
-    pills.appendChild(h('span', {class:'badge' + ((ins.claudeMdLevel || ins.sessionEndHook) ? ' ok' : ' dimmed'), text: md}));
+    var hookLbl = level === 'session' ? (ins.sessionEndHook ? 'SessionEnd hook \u2713' : 'SessionEnd hook \u2717') : 'SessionEnd off';
+    pills.appendChild(h('span', {class:'badge' + (level === 'session' && ins.sessionEndHook ? ' ok' : (level === 'session' ? '' : ' dimmed')), text: hookLbl}));
   }
   pills.appendChild(h('span', {class:'dim small', style:'margin-left:4px', text:'|'}));
   var L = learned;
@@ -633,7 +632,6 @@ function rTagging(){
     var lv = levels[i].id;
     desc.textContent = levels[i].description;
     Array.prototype.forEach.call(ticks.children, function(s, j){ s.className = j === i ? 'sel' : ''; });
-    sessionCard.style.display = lv === 'session' ? '' : 'none';
   }
   slider.addEventListener('input', function(){ syncLevelUi(Number(slider.value)); });
   slider.addEventListener('change', function(){
@@ -647,28 +645,20 @@ function rTagging(){
   levelCard.appendChild(setupPills);
   wrap.appendChild(levelCard);
 
-  var sessionCard = h('div', {class:'card', style: t.level === 'session' ? '' : 'display:none'});
-  sessionCard.appendChild(h('h3', {text:'Session-end chat model (optional)'}));
-  sessionCard.appendChild(h('p', {class:'note', text:'At Session end level: set an Anthropic model id to tag via a SessionEnd hook, or leave blank to have the main agent tag with /burner-tag before wrapping up.'}));
-  var endIn = h('input', {type:'text', placeholder:'e.g. claude-haiku-4-5', value: t.endModel || ''});
-  endIn.addEventListener('change', function(){
-    save(api('PUT', '/api/config', {tagging:{endModel: endIn.value.trim()}}), 'Claude setup updated');
-  });
-  var endField = h('div', {class:'field'});
-  endField.appendChild(h('label', {text:'Model id'}));
-  endField.appendChild(endIn);
-  sessionCard.appendChild(endField);
-  sessionCard.appendChild(h('p', {class:'dim small', style:'margin-top:8px', text: ins.sessionEndHook ? 'Hook installed' + (ins.endModel ? ' for ' + ins.endModel : '') + ' · needs ANTHROPIC_API_KEY' : 'Saving a model id installs the SessionEnd hook automatically.'}));
-  wrap.appendChild(sessionCard);
+  var sessionNote = h('div', {class:'card'});
+  sessionNote.appendChild(h('h3', {text:'Session end auto-tag'}));
+  sessionNote.appendChild(h('p', {class:'note', text:'Uses your trained local model (train below) and project defaults. Runs in the SessionEnd hook — no Anthropic API, no edits to CLAUDE.md.'}));
+  sessionNote.appendChild(h('p', {class:'dim small', text: ins.sessionEndHook ? 'Hook installed in ~/.claude/settings.json' : 'Move the slider to Session end to install the hook.'}));
+  wrap.appendChild(sessionNote);
 
   var skillCard = h('div', {class:'card'});
   skillCard.appendChild(h('h3', {text:'Troubleshooting / manual install'}));
-  skillCard.appendChild(h('p', {class:'note', text:'Moving the tagging slider or saving session-end model updates ~/.claude for you. Use this only if /burner-tag is missing or hooks look wrong.'}));
+  skillCard.appendChild(h('p', {class:'note', text:'Moving the tagging slider updates ~/.claude for you. Use this only if /burner-tag is missing or hooks look wrong.'}));
   skillCard.appendChild(h('div', {class:'card-section', style:'margin-top:0;padding-top:0;border:none'}, [
     h('h4', {text:'Status'}),
     h('div', {text:'/' + ins.skillName + ' ' + (ins.skillInstalled ? '\u2713' : '\u2717')}),
     ins.skillPath ? h('div', {class:'dim small', text:ins.skillPath}) : null,
-    h('div', {class:'dim small', text:'CLAUDE.md: ' + (ins.claudeMdLevel || 'none')})]));
+    ins.legacyClaudeMd ? h('div', {class:'dim small', text:'Legacy CLAUDE.md burner block still present — run Sync to remove'}) : null]));
   var installCmd = ins.skillInstallCmdNpm || 'burner install';
   if (ins.devCheckout && ins.skillInstallCmd && ins.skillInstallCmd !== installCmd) {
     installCmd = installCmd + '\\n' + ins.skillInstallCmd;

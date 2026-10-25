@@ -59,25 +59,26 @@ test('install puts the skill in the global Claude dir and applies levels', async
   const { applyTagging } = await import('../src/install.js');
   const cfg = loadConfig();
   writeFileSync(path.join(claudeHome, 'settings.json'), JSON.stringify({ model: 'opus', hooks: { SessionEnd: [{ hooks: [{ type: 'command', command: 'echo bye' }] }] } }));
-  writeFileSync(path.join(claudeHome, 'CLAUDE.md'), '# my rules\nbe nice\n');
+  writeFileSync(path.join(claudeHome, 'CLAUDE.md'), '# my rules\nbe nice\n\n<!-- burner:start -->\nold\n<!-- burner:end -->\n');
 
   let st = applyTagging(saveConfig({ ...cfg, tagging: { ...cfg.tagging, level: 'session' } }));
   assert.ok(st.skillInstalled);
   const skill = readFileSync(path.join(claudeHome, 'skills', 'burner-tag', 'SKILL.md'), 'utf-8');
   assert.match(skill, /^---\nname: burner-tag\n/);
   assert.match(skill, /`debugging`/);
-  assert.equal(st.claudeMdLevel, 'session');
-  assert.match(readFileSync(path.join(claudeHome, 'CLAUDE.md'), 'utf-8'), /^# my rules\nbe nice\n\n<!-- burner:start -->/);
-
-  st = applyTagging(saveConfig({ ...loadConfig(), tagging: { ...cfg.tagging, level: 'session', endModel: 'claude-haiku-test' } }));
   assert.ok(st.sessionEndHook);
-  assert.equal(st.claudeMdLevel, null);
-  assert.equal(st.endModel, 'claude-haiku-test');
   assert.equal(readFileSync(path.join(claudeHome, 'CLAUDE.md'), 'utf-8'), '# my rules\nbe nice\n');
+
+  st = applyTagging(saveConfig({ ...loadConfig(), tagging: { ...cfg.tagging, level: 'session' } }));
+  assert.ok(st.sessionEndHook);
+  const { sessionEndHookEntry } = await import('../src/install.js');
+  const hook = JSON.parse(readFileSync(path.join(claudeHome, 'settings.json'), 'utf-8')).hooks.SessionEnd
+    .flatMap((g) => g.hooks)
+    .find((h) => h.args?.includes('session-end'));
+  assert.deepEqual(hook, sessionEndHookEntry());
 
   writeFileSync(path.join(claudeHome, 'settings.json'), JSON.stringify({ model: 'opus', hooks: { SessionEnd: [{ hooks: [{ type: 'command', command: 'echo bye' }] }, { hooks: [{ type: 'command', command: 'node "C:/x/burner/bin/burner.js" hook session-end' }] }] } }));
   st = applyTagging(saveConfig({ ...loadConfig(), tagging: { ...cfg.tagging, level: 'off' } }));
-  assert.equal(st.claudeMdLevel, null);
   const settings = JSON.parse(readFileSync(path.join(claudeHome, 'settings.json'), 'utf-8'));
   assert.equal(settings.model, 'opus');
   assert.equal(settings.hooks.SessionEnd.length, 1, 'legacy burner hook is removed, the user\'s own stays');

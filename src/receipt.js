@@ -62,7 +62,7 @@ const TAGLINES = [
   'burned so you don\'t have to guess',
   'classified and costed',
 ];
-const SOURCE_LABEL = { skill: 'TAGGED BY CLAUDE', manual: 'TAGGED BY YOU', 'end-model': 'SESSION-END MODEL', learned: 'LEARNED GUESS', project: 'PROJECT DEFAULT', none: 'NOT TAGGED' };
+const SOURCE_LABEL = { skill: 'TAGGED BY CLAUDE', manual: 'TAGGED BY YOU', 'end-model': 'SESSION-END (legacy)', 'session-end': 'SESSION-END AUTO', learned: 'LEARNED GUESS', project: 'PROJECT DEFAULT', none: 'NOT TAGGED' };
 
 function money(n, unpriced) {
   if (unpriced) return '—';

@@ -1,9 +1,10 @@
 // Wires burner into Claude Code globally (~/.claude), never per-repo:
 //   skills/<SKILL_NAME>/SKILL.md  — the tag skill, available in every project
-//   CLAUDE.md block               — "Session end" / "Every task" levels tell Claude to use it
+//   SessionEnd hook               — session level: local auto-tag (no API, no CLAUDE.md)
 
 import { readFileSync, writeFileSync, mkdirSync, existsSync, rmSync } from 'node:fs';
 import path from 'node:path';
+import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 import { CLAUDE_HOME } from './config.js';
 
@@ -51,7 +52,7 @@ export function skillSetupPrompt() {
   return `Set up burner session tagging on this machine (global, not per-repo):
 1. Run in a terminal: ${cmd}${dev}
    (After npm i -g burner-cc, the same command is just: burner install)
-2. That writes ${path.join(home, 'skills', SKILL_NAME, 'SKILL.md')} and applies the tagging level from ~/.burner/config.yaml (CLAUDE.md block and/or SessionEnd hook).
+2. That writes ${path.join(home, 'skills', SKILL_NAME, 'SKILL.md')} and applies the tagging level from ~/.burner/config.yaml (SessionEnd hook when level is session).
 3. Re-run install after you change categories or tagging level on the Settings page.
 Do not edit project repos for this — only files under ${home}.`;
 }
@@ -60,7 +61,7 @@ export function skillMarkdown(cfg) {
   const cats = cfg.categories.map((c) => `- \`${c.id}\` — ${c.description || c.label}`).join('\n');
   return `---
 name: ${SKILL_NAME}
-description: Tag the current Claude Code session with what it was used for (coding, debugging, planning, research, writing, …) for burner usage analytics. Use when the user runs /${SKILL_NAME} or asks to tag/categorize this session, and when the burner block in CLAUDE.md asks you to tag at the end of a session or task.
+description: Tag the current Claude Code session with what it was used for (coding, debugging, planning, research, writing, …) for burner usage analytics. Use when the user runs /${SKILL_NAME} or asks to tag/categorize this session.
 ---
 
 # ${SKILL_NAME}
@@ -81,22 +82,6 @@ ${burnerShell('tag')} <category> --session "\${CLAUDE_SESSION_ID}" --reason "<un
 `;
 }
 
-function claudeMdBlock(level) {
-  if (level === 'session') {
-    return `${START}
-## burner
-When you've finished the work the user asked for in this session — before your final summary — use the \`${SKILL_NAME}\` skill once to tag the session. Tag again only if the session's main purpose changed. Keep it silent.
-${END}`;
-  }
-  if (level === 'task') {
-    return `${START}
-## burner
-Each time you finish a distinct task the user asked for, use the \`${SKILL_NAME}\` skill with \`--task\` to tag that task before replying. One tag per task, silent.
-${END}`;
-  }
-  return null;
-}
-
 function readJsonFile(file) {
   if (!existsSync(file)) return {};
   try {
@@ -106,19 +91,36 @@ function readJsonFile(file) {
   }
 }
 
+/** Claude Code command hook (exec form): node + burner.js, no shell/PATH/.cmd shims. */
+export function sessionEndHookEntry() {
+  return {
+    type: 'command',
+    command: process.execPath,
+    args: [BIN, 'hook', 'session-end'],
+    timeout: 60,
+  };
+}
+
 function isOurHook(h) {
-  return typeof h?.command === 'string' && h.command.includes('burner') && h.command.includes('hook session-end');
+  if (h?.type !== 'command') return false;
+  const args = h.args;
+  if (Array.isArray(args) && args.includes('hook') && args[args.length - 1] === 'session-end') return true;
+  return typeof h.command === 'string' && h.command.includes('hook session-end');
 }
 
 function ensureSessionEndHook() {
   const { settings: file } = paths();
   let settings;
   try { settings = readJsonFile(file); } catch { settings = {}; }
-  const cmd = burnerShell('hook session-end');
-  const groups = [...(settings.hooks?.SessionEnd ?? [])];
-  if (groups.some((g) => (g.hooks ?? []).some(isOurHook))) return;
-  groups.push({ hooks: [{ type: 'command', command: cmd }] });
-  settings.hooks = { ...(settings.hooks ?? {}), SessionEnd: groups };
+  const entry = sessionEndHookEntry();
+  const hooks = settings.hooks ?? {};
+  const before = JSON.stringify(settings);
+  let groups = (hooks.SessionEnd ?? [])
+    .map((g) => ({ ...g, hooks: (g.hooks ?? []).filter((h) => !isOurHook(h)) }))
+    .filter((g) => g.hooks.length);
+  groups.push({ hooks: [entry] });
+  settings.hooks = { ...hooks, SessionEnd: groups };
+  if (JSON.stringify(settings) === before) return;
   mkdirSync(path.dirname(file), { recursive: true });
   writeFileSync(file, JSON.stringify(settings, null, 2) + '\n', 'utf-8');
 }
@@ -142,18 +144,15 @@ function removeSessionEndHook() {
   writeFileSync(file, JSON.stringify(settings, null, 2) + '\n', 'utf-8');
 }
 
-function setClaudeMd(level) {
+/** Remove legacy burner blocks from ~/.claude/CLAUDE.md (we no longer install them). */
+export function stripBurnerClaudeMd() {
   const { claudeMd } = paths();
-  const current = existsSync(claudeMd) ? readFileSync(claudeMd, 'utf-8') : '';
+  if (!existsSync(claudeMd)) return;
+  const current = readFileSync(claudeMd, 'utf-8');
   const re = new RegExp(`\\n?${START}[\\s\\S]*?${END}\\n?`, 'g');
-  let next = current.replace(re, '\n').replace(/\s+$/, '');
-  const block = claudeMdBlock(level);
-  if (block) next = (next ? next + '\n\n' : '') + block;
-  next = next ? next + '\n' : '';
+  const next = current.replace(re, '\n').replace(/\s+$/, '');
   if (next.trim() === current.trim()) return;
-  if (!next.trim() && !existsSync(claudeMd)) return;
-  mkdirSync(path.dirname(claudeMd), { recursive: true });
-  writeFileSync(claudeMd, next, 'utf-8');
+  writeFileSync(claudeMd, next ? next + '\n' : '', 'utf-8');
 }
 
 export function installSkill(cfg) {
@@ -166,40 +165,34 @@ export function installSkill(cfg) {
 // Applies the tagging level from config to ~/.claude. Idempotent.
 export function applyTagging(cfg) {
   const level = cfg.tagging?.level ?? 'manual';
-  const endModel = String(cfg.tagging?.endModel ?? '').trim();
   if (level === 'off') {
     const p = paths();
     if (existsSync(p.skillDir)) rmSync(p.skillDir, { recursive: true, force: true });
   } else {
     installSkill(cfg);
   }
+  stripBurnerClaudeMd();
   removeSessionEndHook();
-  if (level === 'session' && endModel) {
-    ensureSessionEndHook();
-    setClaudeMd('off');
-  } else {
-    setClaudeMd(level === 'off' ? 'off' : level);
-  }
+  if (level === 'session') ensureSessionEndHook();
   return installStatus(cfg);
 }
 
 export function uninstall() {
   const p = paths();
   if (existsSync(p.skillDir)) rmSync(p.skillDir, { recursive: true, force: true });
-  setClaudeMd('off');
+  stripBurnerClaudeMd();
   removeSessionEndHook();
 }
 
 export function installStatus(cfg = null) {
   const p = paths();
-  const md = existsSync(p.claudeMd) ? readFileSync(p.claudeMd, 'utf-8') : '';
-  const block = md.match(new RegExp(`${START}[\\s\\S]*?${END}`))?.[0] ?? '';
   let hookInstalled = false;
   try {
     const settings = readJsonFile(p.settings);
     hookInstalled = (settings.hooks?.SessionEnd ?? []).some((g) => (g.hooks ?? []).some(isOurHook));
   } catch { /* no settings */ }
-  const endModel = String(cfg?.tagging?.endModel ?? '').trim();
+  const md = existsSync(p.claudeMd) ? readFileSync(p.claudeMd, 'utf-8') : '';
+  const legacyClaudeMd = !!md.match(new RegExp(`${START}[\\s\\S]*?${END}`));
   return {
     skillName: SKILL_NAME,
     skillInstalled: existsSync(p.skillFile),
@@ -207,9 +200,8 @@ export function installStatus(cfg = null) {
     skillInstallCmd: burnerShell('install'),
     skillInstallCmdNpm: `${NPM_CLI} install`,
     devCheckout: isDevCheckout(),
-    claudeMdLevel: block.includes('--task') ? 'task' : block ? 'session' : null,
+    legacyClaudeMd,
     sessionEndHook: hookInstalled,
-    endModel,
     claudeHome: CLAUDE_HOME,
   };
 }
