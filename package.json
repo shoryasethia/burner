@@ -1,6 +1,6 @@
 {
   "name": "burner-cc",
-  "version": "0.3.3",
+  "version": "0.3.4",
   "description": "What your Claude Code sessions cost, and what they were for — itemized receipts, projects, intent tagging.",
   "type": "module",
   "bin": {
