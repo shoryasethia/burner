@@ -19,3 +19,5 @@ _tmp-*.js
 
 # User runtime data (lives in ~/.burner)
 .burner/
+
+video/

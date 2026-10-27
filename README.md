@@ -6,6 +6,8 @@ What your Claude Code sessions cost, and what they were for — itemized receipt
 
 Zero runtime dependencies. Reads `~/.claude/projects/` on your machine. Only network use by default is refreshing public model prices (optional).
 
+https://github.com/user-attachments/assets/34e7075d-b427-4190-9346-c70387dc8f7e
+
 ## Install
 
 ```bash
