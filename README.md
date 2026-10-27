@@ -2,6 +2,9 @@
 
 # burner
 
+[![npm version](https://img.shields.io/npm/v/burner-cc.svg)](https://www.npmjs.com/package/burner-cc)
+[![npm downloads](https://img.shields.io/npm/dt/burner-cc.svg)](https://www.npmjs.com/package/burner-cc)
+
 What your Claude Code sessions cost, and what they were for — itemized receipts, projects, intent tagging, and a local analytics app.
 
 Zero runtime dependencies. Reads `~/.claude/projects/` on your machine. Only network use by default is refreshing public model prices (optional).
