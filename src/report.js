@@ -431,7 +431,12 @@ input,select{font-family:inherit;font-size:11px;background:var(--bg);border:1px 
 .srow .sd{color:var(--dim);min-width:76px;font-size:10px;flex-shrink:0;}
 .srow .st{flex:2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 .srow .sp{color:var(--dim);font-size:10px;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-.srow .sc{min-width:88px;text-align:right;flex-shrink:0;}
+.srow .sc{min-width:100px;text-align:right;flex-shrink:0;display:flex;justify-content:flex-end;align-items:center;gap:2px;}
+.cat-pick-wrap{display:inline-flex;align-items:center;gap:5px;--pick-cat:var(--dim);}
+.cat-pick-wrap .cat-dot{width:7px;height:7px;border-radius:50%;background:var(--pick-cat);flex-shrink:0;box-shadow:0 0 0 1px color-mix(in srgb,var(--pick-cat) 30%,transparent);}
+.cat-pick-wrap .cat-pick{font-family:inherit;font-size:10px;background:color-mix(in srgb,var(--pick-cat) 14%,var(--page-bg));border:1px solid color-mix(in srgb,var(--pick-cat) 50%,var(--rule));color:var(--ink);padding:2px 5px;border-radius:2px;max-width:104px;cursor:pointer;}
+.cat-pick-wrap .cat-hint{font-size:9px;color:var(--dim);line-height:1;}
+.srow .cat-pick{font-family:inherit;font-size:10px;background:var(--page-bg);border:1px solid var(--rule);color:var(--ink);padding:2px 4px;border-radius:2px;max-width:110px;}
 .srow .stok{min-width:64px;text-align:right;color:var(--dim);font-size:10px;flex-shrink:0;}
 .srow .scost{min-width:58px;text-align:right;font-weight:bold;flex-shrink:0;}
 .dot{display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:4px;}
@@ -598,7 +603,7 @@ ${logoTextUri ? `<img class="page-brand" src="${logoTextUri}" alt="Burner" />` :
     <h3>Categories</h3>
     <p>A session's category comes from, in order: a tag (<code>/burner-tag</code>, the report UI, SessionEnd auto-tag, or CLI), its project's default category, then the <strong>learned model</strong> if trained and confident (≥60%). Otherwise it stays <em>untagged</em>.</p>
     <p><strong>Learned model</strong> — optional on-device classifier (multinomial naive Bayes) trained on your tagged sessions; guesses only when nothing else applied. <strong>/burner-tag skill</strong> — global skill under <code>~/.claude/skills/burner-tag</code>; run <code>burner install</code> (Settings → Tagging has copy blocks). <strong>Session end</strong> — with a model id on Settings, a SessionEnd hook asks that Anthropic model what the session was for; without a model id, the main agent tags via the skill before wrapping up.</p>
-    <p>Token totals follow the same idea as <a href="https://ccusage.com/guide/cost-modes" target="_blank" rel="noopener">ccusage</a>: one row per <code>requestId</code> (last streamed chunk), 5m/1h cache write split when present, global dedup for continued sessions. Burner always calculates from tokens (like ccusage <code>--mode calculate</code>); Claude Code's <code>cost-state</code> line is shown on the receipt for comparison when available.</p>
+    <p>When a session has a <code>cost-state</code> line (written at exit), Burner uses Claude Code's <code>totalCostUSD</code> and per-model <code>costUSD</code> for totals — that includes subagents and background requests missing from the visible transcript. Without it, totals are calculated from transcript tokens and public LiteLLM prices (like ccusage <code>--mode calculate</code>).</p>
     <h3>Projects</h3>
     <p>A project groups one or more directories. Every session is matched by the directory Claude Code ran in (longest match wins). Directories not in any project show up under their folder name.</p>
     <h3>Pricing</h3>
@@ -614,6 +619,7 @@ ${logoTextUri ? `<img class="page-brand" src="${logoTextUri}" alt="Burner" />` :
 let ALL  = ${safeJson(reportSessions)};
 const CC   = ${safeJson(CAT_COLORS)};
 const CL   = ${safeJson(CAT_LABELS)};
+const CATEGORIES = ${safeJson(categories.map(c => ({ id: c.id, label: c.label })))};
 const SERVED = ${served};
 const RANGE0 = ${served ? safeJson(range) : 'null'};
 const PS   = 20;
@@ -638,11 +644,11 @@ document.querySelectorAll('.tbtn').forEach(b=>b.addEventListener('click',()=>{
   document.querySelectorAll('.tbtn').forEach(x=>x.classList.remove('active'));
   b.classList.add('active'); activeRange=b.dataset.r; saveRange();
   document.getElementById('customRange').classList.toggle('show',activeRange==='custom');
-  rebuild();
+  rebuild(true);
 }));
 document.getElementById('applyCustom').addEventListener('click',()=>{
   const f=document.getElementById('fromDate').value,t=document.getElementById('toDate').value;
-  customFrom=f?new Date(f).getTime():null; customTo=t?new Date(t).getTime():null; saveRange(); rebuild();
+  customFrom=f?new Date(f).getTime():null; customTo=t?new Date(t).getTime():null; saveRange(); rebuild(true);
 });
 
 // The chosen range is remembered (server config when served, else this browser).
@@ -752,7 +758,15 @@ function applyFilters(sessions){
   return rows;
 }
 
-function renderList(sessions){filtered=applyFilters(sessions);curPage=1;renderPage();}
+function renderList(sessions, resetPage){
+  filtered=applyFilters(sessions);
+  if(resetPage) curPage=1;
+  else {
+    const pages=Math.max(1,Math.ceil(filtered.length/PS));
+    if(curPage>pages) curPage=pages;
+  }
+  renderPage();
+}
 
 function renderPage(){
   const total=filtered.length,pages=Math.ceil(total/PS);
@@ -760,18 +774,33 @@ function renderPage(){
   document.getElementById('sessionList').innerHTML=sl.map(s=>{
     const cat=catOf(s),col=catCol(cat);
     const hint=s.categorySource==='learned'?'?':(s.categorySplit&&s.categorySplit.length>1?'+':'');
+    const catOpts=CATEGORIES.map(c=>'<option value="'+esc(c.id)+'"'+(c.id===cat?' selected':'')+'>'+esc(c.label)+'</option>').join('');
+    const catCell=SERVED
+      ? '<span class="cat-pick-wrap" style="--pick-cat:'+col+'"><span class="cat-dot" aria-hidden="true"></span>'
+        +'<select class="cat-pick" data-id="'+esc(s.sessionId)+'" title="tag session">'+catOpts+'</select>'
+        +(hint?'<span class="cat-hint">'+hint+'</span>':'')+'</span>'
+      : '<span title="'+esc(s.categorySource)+'"><span class="dot" style="background:'+col+'"></span>'+esc(catLabel(cat))+hint+'</span>';
     return '<div class="srow" data-id="'+esc(s.sessionId)+'">'
       +'<span class="sd">'+esc(s.date)+'</span>'
       +'<span class="st" title="'+esc(s.title)+'">'+esc(s.title)+'</span>'
       +'<span class="sp" title="'+esc(s.cwd||s.project)+'">'+esc(s.project)+'</span>'
-      +'<span class="sc" title="'+esc(s.categorySource)+'"><span class="dot" style="background:'+col+'"></span>'+esc(catLabel(cat))+hint+'</span>'
+      +'<span class="sc">'+catCell+'</span>'
       +'<span class="stok">'+fT(s.totalTokens.total)+'</span>'
       +'<span class="scost">'+fC(s.totalCost.total)+(s.hasUnpriced?'*':'')+'</span>'
       +'</div>';
   }).join('')||'<div style="font-size:11px;color:var(--dim);padding:10px 0">no sessions match</div>';
 
   const pg=document.getElementById('pager');
-  document.querySelectorAll('.srow').forEach(r=>r.addEventListener('click',()=>{const u=receiptUrl(r.dataset.id);if(SERVED)location.href=u;else window.open(u,'_blank');}));
+  document.querySelectorAll('.srow').forEach(r=>r.addEventListener('click',(e)=>{
+    if(e.target.closest('.cat-pick-wrap')) return;
+    try{sessionStorage.setItem('burner-list-page',String(curPage));}catch(err){}
+    const u=receiptUrl(r.dataset.id);
+    if(SERVED)location.href=u;else window.open(u,'_blank');
+  }));
+  document.querySelectorAll('.cat-pick').forEach(sel=>{
+    sel.addEventListener('click',e=>e.stopPropagation());
+    sel.addEventListener('change',()=>tagFromList(sel));
+  });
   if(pages<=1){pg.innerHTML='';return;}
   let h='<span class="pg-info">'+curPage+' / '+pages+' ('+total+')</span> ';
   if(curPage>1) h+='<button onclick="gp('+(curPage-1)+')">&lt;</button> ';
@@ -780,7 +809,18 @@ function renderPage(){
   if(curPage<pages) h+='<button onclick="gp('+(curPage+1)+')">&gt;</button>';
   pg.innerHTML=h;
 }
-window.gp=function(n){curPage=n;renderPage();document.querySelector('.sessions-card').scrollIntoView({behavior:'smooth',block:'start'});};
+window.gp=function(n){curPage=n;try{sessionStorage.setItem('burner-list-page',String(curPage));}catch(e){}renderPage();document.querySelector('.sessions-card').scrollIntoView({behavior:'smooth',block:'start'});};
+
+async function tagFromList(sel){
+  if(!SERVED)return;
+  const res=await fetch('/api/tag',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:sel.dataset.id,category:sel.value})});
+  if(!res.ok){toast((await res.json()).error||'failed');return;}
+  const row=ALL.find(x=>x.sessionId===sel.dataset.id);
+  if(row){row.category=sel.value;row.categorySource='manual';}
+  const wrap=sel.closest('.cat-pick-wrap');
+  if(wrap) wrap.style.setProperty('--pick-cat',catCol(sel.value));
+  toast('tagged');
+}
 
 document.getElementById('docsLink').addEventListener('click',e=>{e.preventDefault();document.getElementById('docsOverlay').classList.add('show');});
 document.getElementById('docsClose').addEventListener('click',()=>document.getElementById('docsOverlay').classList.remove('show'));
@@ -825,9 +865,9 @@ function setTheme(t,persist=true){
 }
 document.querySelectorAll('button[data-theme]').forEach(b=>b.addEventListener('click',()=>setTheme(b.dataset.theme)));
 
-document.getElementById('search').addEventListener('input',()=>rebuild());
-document.getElementById('catFilter').addEventListener('change',()=>rebuild());
-document.getElementById('sortBy').addEventListener('change',()=>rebuild());
+document.getElementById('search').addEventListener('input',()=>rebuild(true));
+document.getElementById('catFilter').addEventListener('change',()=>rebuild(true));
+document.getElementById('sortBy').addEventListener('change',()=>rebuild(true));
 
 function renderSummary(sess){
   const z=()=>({input:0,cacheWrite:0,cacheRead:0,output:0,total:0});
@@ -841,7 +881,13 @@ function renderSummary(sess){
     +'<hr class="rule" />'+row('TOTAL','total',' total')
     +'<div class="line"><span class="lbl i">CACHE HIT RATE</span><span class="val">'+(prompt?Math.round(t.cacheRead/prompt*100):0)+'%</span></div>';
 }
-function rebuild(){const sess=ALL.filter(inRange);renderSummary(sess);drawCharts(sess);renderList(sess);}
+function rebuild(resetPage){
+  if(resetPage===undefined) resetPage=false;
+  const sess=ALL.filter(inRange);
+  renderSummary(sess);
+  drawCharts(sess);
+  renderList(sess, resetPage);
+}
 
 window.addEventListener('resize',()=>drawCharts(ALL.filter(inRange)));
 
@@ -855,16 +901,24 @@ async function syncData(force){
     const res=await fetch('/api/sessions',{cache:'no-store'});
     if(!res.ok)return;
     ALL=(await res.json()).map(({activity,attribution,subagentGroups,subagentRuns,agents,...s})=>s);
-    rebuild();
+    rebuild(false);
   }catch(e){}
 }
 window.addEventListener('pageshow',e=>{if(e.persisted)syncData(true);});
 document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')syncData(false);});
 window.addEventListener('focus',()=>syncData(false));
 
+function restoreListPage(){
+  try{
+    const n=parseInt(sessionStorage.getItem('burner-list-page')||'1',10);
+    if(n>0) curPage=n;
+  }catch(e){}
+}
+
 restoreRange();
+restoreListPage();
 setTheme(document.documentElement.getAttribute('data-theme'),false);
-rebuild();
+rebuild(false);
 </script>
 </body>
 </html>`;

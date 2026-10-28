@@ -94,9 +94,7 @@ function attributedSection(session, esc) {
   const mcp = attr?.mcp ?? [];
   const skills = attr?.skills ?? [];
   const webEntries = Object.entries(session.activity?.web ?? {});
-  const agentEntries = Object.entries(session.agents ?? {});
-  const runs = session.subagentRuns ?? [];
-  if (!mcp.length && !skills.length && !webEntries.length && !agentEntries.length && !runs.length) return '';
+  if (!mcp.length && !skills.length && !webEntries.length) return '';
 
   const servers = mcp.map((server) => {
     const tools = server.tools.map((tool) => bucketLines(tool, tool.name, tool.calls === 1 ? 'call' : 'calls', 1, esc)).join('');
@@ -110,18 +108,12 @@ function attributedSection(session, esc) {
   const webBlock = webEntries.length
     ? `<div class="model-heading">WEB</div>${webEntries.map(([tool, count]) => attrRow(esc(tool), `${count}×`, '', 1)).join('')}`
     : '';
-  const agentBlock = agentEntries.length
-    ? `<div class="model-heading">SUBAGENT TASKS (parent transcript)</div>${agentEntries.map(([name, n]) => attrRow(esc(name), `${n}×`, '', 1)).join('')}`
-    : '';
-  const runBlock = runs.length
-    ? `<div class="model-heading">SUBAGENT RUNS (${runs.length})</div>${runs.map((r) => attrRow(esc(r.type), r.description ? esc(r.description).slice(0, 48) : '—', '', 1)).join('')}`
-    : '';
   const note = mcp.length || skills.length ? `<div class="reason">${esc(attr?.note ?? ATTRIBUTION_NOTE)}</div>` : '';
 
   return `
     <hr class="rule" />
-    <div class="model-heading">MCP · SKILLS · SUBAGENTS</div>
-    ${servers}${skillBlock}${webBlock}${agentBlock}${runBlock}${note}
+    <div class="model-heading">MCP · SKILLS</div>
+    ${servers}${skillBlock}${webBlock}${note}
   `;
 }
 
@@ -157,6 +149,9 @@ export function renderReceipt(session, categories, { served = false, theme = nul
 
   function modelBlock(m) {
     const t = m.tokens, c = m.cost;
+    const billed =
+      (t.input || 0) + (t.output || 0) + (t.cacheWrite5m || 0) + (t.cacheWrite1h || 0) + (t.cacheRead || 0);
+    if (!billed) return '';
     const badge = m.unpriced ? ' <span class="unpriced-flag" title="no price set — counted as $0">[$0 · unpriced]</span>' : '';
     const rows = [`<div class="model-heading">${esc(m.rawModel)}${badge}</div>`];
     const line = (lbl, tok, amt) =>
@@ -169,9 +164,12 @@ export function renderReceipt(session, categories, { served = false, theme = nul
   }
 
   const detailSection = attributedSection(session, esc);
-  const ccLine = session.ccReportedCost != null
-    ? `<div class="line"><span class="label indent">Claude Code reported</span><span class="tok"></span><span class="amt">${fmtUsd(session.ccReportedCost)}</span></div>`
-    : '';
+  const ccLine =
+    session.billingSource !== 'cost-state'
+    && session.ccReportedCost != null
+    && Math.abs(session.ccReportedCost - session.totalCost.total) > 0.0005
+      ? `<div class="line"><span class="label indent">Claude Code reported</span><span class="tok"></span><span class="amt">${fmtUsd(session.ccReportedCost)}</span></div>`
+      : '';
 
   const splitSection = session.categorySplit?.length > 1 ? session.categorySplit.map((x) =>
     `<div class="line"><span class="label indent"><span class="dot" style="background:${catVar(x.category)}"></span>${esc(catById[x.category]?.label ?? x.category)}</span><span class="tok">${fmtTok(x.tokens)}</span><span class="amt">${fmtUsd(x.cost)}</span></div>`).join('') : '';
@@ -181,12 +179,13 @@ export function renderReceipt(session, categories, { served = false, theme = nul
     ? `<select id="catPick" title="change category">${categories.map((c) => `<option value="${esc(c.id)}"${c.id === session.category ? ' selected' : ''}>${esc(c.label)}</option>`).join('')}</select>`
     : `<span class="cat-badge" style="background:${catVar(cat.id)}">${esc(cat.label)}</span>`;
 
+  const mainModels = session.mainModels ?? session.models;
   const copyLines = [
     'CLAUDE CODE — AGENTIC SESSION RECEIPT',
     `SESSION: ${session.title}  DATE: ${shortDate(session.date)}  PROJECT: ${session.project}`,
     `INTENT: ${cat.label} (${sourceLabel})`,
     '-'.repeat(40),
-    ...session.models.map((m) => `${m.rawModel}: ${fmtTok(m.tokens.input + m.tokens.output + m.tokens.cacheWrite5m + m.tokens.cacheWrite1h + m.tokens.cacheRead)} ${m.unpriced ? '$0 (unpriced)' : fmtUsd(m.cost.total)}`),
+    ...mainModels.map((m) => `${m.rawModel}: ${fmtTok(m.tokens.input + m.tokens.output + m.tokens.cacheWrite5m + m.tokens.cacheWrite1h + m.tokens.cacheRead)} ${m.unpriced ? '$0 (unpriced)' : fmtUsd(m.cost.total)}`),
     '-'.repeat(40),
     `TOTAL: ${fmtUsd(session.totalCost.total)}`,
     '~ BURNER ~',
@@ -279,8 +278,8 @@ ${logoTextUri ? `<img class="page-brand" src="${logoTextUri}" alt="Burner" />` :
   ${session.tagReason ? `<div class="reason">"${esc(session.tagReason)}"</div>` : ''}
   ${splitSection}
   <hr class="rule" />
-  ${session.models.map(modelBlock).join('')}
-  ${subagentModelSections(session, esc, modelBlock)}
+  ${mainModels.map(modelBlock).join('')}
+  ${session.billingSource === 'cost-state' ? '' : subagentModelSections(session, esc, modelBlock)}
   ${detailSection}
   ${ccLine}
   <hr class="rule" />
@@ -302,7 +301,7 @@ ${logoTextUri ? `<img class="page-brand" src="${logoTextUri}" alt="Burner" />` :
   <div class="footer brand">~ B U R N E R ~</div>
 </div>
 
-<div class="disclaimer">not official billing${session.hasUnpriced ? ' · unpriced models counted as $0' : ''}</div>
+<div class="disclaimer">not official billing${session.billingSource === 'cost-state' ? ' · totals from Claude Code cost-state (matches /usage-style session accounting)' : ''}${session.hasUnpriced ? ' · unpriced models counted as $0' : ''}</div>
 <div class="toast" id="toast"></div>
 
 <script>${readVendor('html2canvas.min.js') ?? ''}</script>

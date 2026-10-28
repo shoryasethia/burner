@@ -38,6 +38,19 @@ function readSubagentMeta(subagentFile) {
   }
 }
 
+// Claude Code's sidecar has drifted field names; fall back to a neutral label
+// instead of printing "unknown" on every receipt.
+export function resolveSubagentType(meta) {
+  if (!meta || typeof meta !== 'object') return 'Subagent';
+  const raw =
+    meta.agentType ?? meta.agent_type ?? meta.subagentType ?? meta.subagent_type
+    ?? meta.type ?? meta.kind ?? null;
+  if (raw == null || raw === '') return 'Subagent';
+  const s = String(raw).trim();
+  if (!s || s.toLowerCase() === 'unknown') return 'Subagent';
+  return s;
+}
+
 // A session's human-readable name isn't the UUID filename — Claude Code
 // logs it as a "custom-title" event when the user runs /rename, falling
 // back to the auto-generated "slug" (e.g. "wise-bubbling-wadler") that's

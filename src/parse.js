@@ -103,6 +103,7 @@ export function parseTranscript(path) {
   const digest = emptyDigest();
   let reported = null;
   let anon = 0;
+  let lastModel = null;
 
   for (const line of text.split('\n')) {
     if (!line.trim()) continue;
@@ -141,7 +142,8 @@ export function parseTranscript(path) {
     if (req && !rid && req.lastUser !== userCount) req = null;
     if (!req) {
       const key = !base ? `${file}#anon${anon++}` : latest.has(base) ? `${file}#${base}#${++splitN}` : base;
-      req = { key, model: msg.model ?? 'unknown', timestamp: entry.timestamp ?? null, usage: null, tools: new Map(), skill: null, lastUser: userCount };
+      const model = msg.model ?? entry.model ?? lastModel ?? 'unknown';
+      req = { key, model, timestamp: entry.timestamp ?? null, usage: null, tools: new Map(), skill: null, lastUser: userCount };
       requests.set(key, req);
       order.push(req);
       if (base) latest.set(base, req);
@@ -150,9 +152,11 @@ export function parseTranscript(path) {
     if (entry.attributionSkill) req.skill = entry.attributionSkill;
     if (msg.usage && typeof msg.usage === 'object' && (!req.usage || tok(msg.usage.output_tokens ?? msg.usage.completion_tokens) >= tok(req.usage.output_tokens ?? req.usage.completion_tokens))) {
       req.usage = msg.usage;
-      req.model = msg.model ?? req.model;
+      const m = msg.model ?? entry.model;
+      if (m) req.model = m;
       if (entry.timestamp) req.timestamp = entry.timestamp;
     }
+    if (req.model && req.model !== 'unknown') lastModel = req.model;
     if (Array.isArray(msg.content)) {
       for (const block of msg.content) {
         if (block.type !== 'tool_use') continue;
@@ -164,13 +168,17 @@ export function parseTranscript(path) {
 
   const turns = [];
   const billed = [];
+  let carryModel = null;
   for (const req of order) {
     // Some local servers report no usage at all. Keep the request (so the
     // model shows up and can be priced) but mark that its tokens are unknown.
     const n = req.usage ? normalizeUsage(req.usage) : { input: 0, output: 0, cacheWrite5m: 0, cacheWrite1h: 0, cacheRead: 0 };
     const unreported = !(n.input || n.output || n.cacheWrite5m || n.cacheWrite1h || n.cacheRead);
     if (unreported && !req.model) continue;
-    const turn = { requestId: req.key, model: req.model, timestamp: req.timestamp, ...n, unreported };
+    let model = req.model;
+    if (model === 'unknown' && carryModel) model = carryModel;
+    else if (model && model !== 'unknown') carryModel = model;
+    const turn = { requestId: req.key, model, timestamp: req.timestamp, ...n, unreported };
     turns.push(turn);
     billed.push({ req, turn });
   }

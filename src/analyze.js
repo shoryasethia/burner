@@ -1,13 +1,14 @@
 // Reads every session, prices it, resolves its project and category, and
 // returns the data behind the report, receipts and settings pages.
 
-import { discoverSessions } from './discover.js';
+import { discoverSessions, resolveSubagentType } from './discover.js';
 import { parseTranscript, timeRange, mergeParsed } from './parse.js';
 import { priceAttribution, summarizeSubagentsByType, activityFrom } from './build-receipt.js';
 import { loadPricingTable, lookupPricing, costFor, pricingInfo } from './pricing.js';
 import { loadConfig, resolveProject, UNTAGGED } from './config.js';
 import { loadTags, segmentTurns, loadAssignments, resolveSessionProject } from './tags.js';
 import { resolveCategory, buildDigest, loadLearned } from './classifier.js';
+import { ccReportedCost, hasCostState, priceFromCostState } from './billing.js';
 
 const zeroTokens = () => ({ input: 0, output: 0, cacheWrite5m: 0, cacheWrite1h: 0, cacheRead: 0 });
 const zeroCost = () => ({ input: 0, output: 0, cacheWrite: 0, cacheRead: 0, total: 0 });
@@ -78,16 +79,6 @@ function agentInvocations(parsedList) {
   return counts;
 }
 
-function ccReportedCost(reported) {
-  if (!reported?.modelUsage) return null;
-  let total = 0;
-  for (const u of Object.values(reported.modelUsage)) {
-    const n = u?.costUSD ?? u?.totalCost ?? u?.cost;
-    if (typeof n === 'number') total += n;
-  }
-  return total > 0 ? total : null;
-}
-
 function within(s, opts) {
   if (opts.from && s.mtime < new Date(opts.from).getTime()) return false;
   if (opts.to && s.mtime > new Date(opts.to + 'T23:59:59').getTime()) return false;
@@ -120,15 +111,20 @@ export async function analyzeSessions(opts = {}) {
       return true;
     });
     const mainTurns = fresh(main.turns);
-    const subTurns = subs.flatMap((s) => fresh(s.parsed.turns));
+    const billSubTranscripts = !hasCostState(main.reported);
+    const subTurns = billSubTranscripts ? subs.flatMap((s) => fresh(s.parsed.turns)) : [];
     const turns = [...mainTurns, ...subTurns];
-    if (!turns.length && !main.digest.prompts.length) continue;
+    if (!turns.length && !main.digest.prompts.length && !hasCostState(main.reported)) continue;
 
     const cwd = main.digest.cwd;
     const project = resolveSessionProject(session.sessionId, cwd, cfg, assignments);
     const dirProject = resolveProject(cwd, cfg);
     const digest = buildDigest(main, { title: session.title, projectName: project.name });
-    const { models, tokens, cost } = priceTurns(turns, table);
+    const fromState = priceFromCostState(main.reported, table);
+    const billingSource = fromState ? 'cost-state' : 'calculated';
+    const priced = fromState ?? priceTurns(turns, table);
+    const { models, tokens, cost } = priced;
+    const mainModels = fromState ? models : priceTurns(mainTurns, table).models;
     const tag = tags[session.sessionId];
 
     let { category, source, confidence } = resolveCategory({ tag, project, cfg, digest, learned });
@@ -148,7 +144,7 @@ export async function analyzeSessions(opts = {}) {
       if (split[0].cost > 0 || split[0].tokens > 0) category = split[0].category;
     }
 
-    const range = timeRange(turns);
+    const range = timeRange(billSubTranscripts ? turns : mainTurns.length ? mainTurns : turns);
     const totalTokens = { input: tokens.input, output: tokens.output, cacheWrite: tokens.cacheWrite5m + tokens.cacheWrite1h, cacheRead: tokens.cacheRead };
     totalTokens.total = tokenTotal(totalTokens);
     const promptSide = totalTokens.input + totalTokens.cacheWrite + totalTokens.cacheRead;
@@ -171,10 +167,12 @@ export async function analyzeSessions(opts = {}) {
       subagentCount: session.subagentFiles.length,
       promptCount: main.digest.prompts.length,
       models,
-      daily: dailySpend(turns, table),
+      mainModels,
+      daily: fromState ? dailySpend(mainTurns, table) : dailySpend(turns, table),
       totalTokens,
       totalCost: cost,
-      hasUnpriced: models.some((m) => m.unpriced),
+      billingSource,
+      hasUnpriced: billingSource === 'calculated' && models.some((m) => m.unpriced),
       cacheHitRate: promptSide ? Math.round((totalTokens.cacheRead / promptSide) * 100) : 0,
       category,
       categorySource: source,
@@ -183,9 +181,9 @@ export async function analyzeSessions(opts = {}) {
       tagReason: tag?.reason ?? null,
       activity: activityFrom(mergeParsed([main, ...subs.map((s) => s.parsed)])),
       attribution: priceAttribution(mergeParsed([main, ...subs.map((s) => s.parsed)]), table),
-      subagentGroups: summarizeSubagentsByType(session.subagentFiles, table),
+      subagentGroups: fromState ? [] : summarizeSubagentsByType(session.subagentFiles, table),
       subagentRuns: subs.map(({ meta }) => ({
-        type: meta?.agentType ?? 'unknown',
+        type: resolveSubagentType(meta),
         description: meta?.description ?? null,
         spawnDepth: meta?.spawnDepth ?? null,
       })),

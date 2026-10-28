@@ -1,4 +1,6 @@
 import { parseTranscript, timeRange, mergeParsed } from './parse.js';
+import { resolveSubagentType } from './discover.js';
+import { hasCostState, priceFromCostState } from './billing.js';
 import { lookupPricing, costFor, loadPricingTable } from './pricing.js';
 
 // Shown on the receipt and in --json. The dollars below are a slice of the
@@ -74,7 +76,7 @@ export function summarizeSubagentsByType(subagentFiles, table) {
   const byType = new Map();
 
   for (const { file, meta } of subagentFiles) {
-    const type = meta?.agentType ?? 'unknown';
+    const type = resolveSubagentType(meta);
     const { turns } = parseTranscript(file);
     if (!byType.has(type)) byType.set(type, { agentType: type, runCount: 0, turns: [] });
     const bucket = byType.get(type);
@@ -199,20 +201,36 @@ export function buildReceipt(session, table) {
   const subagentTurns = subagentParsed.flatMap((p) => p.turns);
   const merged = mergeParsed([main, ...subagentParsed]);
 
-  const mainModels = summarizeTurns(mainTurns, table);
-  const subagentGroups = summarizeSubagentsByType(session.subagentFiles, table);
-  const allSubagentModels = subagentGroups.flatMap((g) => g.models);
+  const fromState = priceFromCostState(main.reported, table);
+  let mainModels;
+  let subagentGroups;
+  let totals;
+
+  if (fromState) {
+    mainModels = fromState.models.map((m) => ({
+      rawModel: m.rawModel,
+      fidelity: m.fidelity,
+      turnCount: m.turnCount,
+      tokens: m.tokens,
+      cost: m.cost,
+    }));
+    subagentGroups = [];
+    totals = { tokens: fromState.tokens, cost: fromState.cost };
+  } else {
+    mainModels = summarizeTurns(mainTurns, table);
+    subagentGroups = summarizeSubagentsByType(session.subagentFiles, table);
+    const allSubagentModels = subagentGroups.flatMap((g) => g.models);
+    totals = {
+      tokens: sumTokens([...mainModels, ...allSubagentModels]),
+      cost: sumCost([...mainModels, ...allSubagentModels]),
+    };
+  }
 
   const activity = activityFrom(merged);
   const attribution = priceAttribution(merged, table);
 
   const { startedAt, endedAt } = timeRange([...mainTurns, ...subagentTurns]);
-  const hasUnpriced = [...mainModels, ...allSubagentModels].some((m) => m.fidelity === 'unpriced');
-
-  const totals = {
-    tokens: sumTokens([...mainModels, ...allSubagentModels]),
-    cost: sumCost([...mainModels, ...allSubagentModels]),
-  };
+  const hasUnpriced = !fromState && [...mainModels, ...(subagentGroups.flatMap((g) => g.models))].some((m) => m.fidelity === 'unpriced');
 
   return {
     sessionId: session.sessionId,

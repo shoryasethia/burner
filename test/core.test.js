@@ -9,6 +9,8 @@ import { parseTranscript } from '../src/parse.js';
 import { resolveProject, defaultConfig } from '../src/config.js';
 import { resolveCategory, trainLearned, predictLearned, buildDigest } from '../src/classifier.js';
 import { segmentTurns } from '../src/tags.js';
+import { resolveSubagentType } from '../src/discover.js';
+import { ccReportedCost, priceFromCostState } from '../src/billing.js';
 
 test('yaml round-trips config with Windows paths, quotes and nested lists', () => {
   const cfg = {
@@ -195,6 +197,34 @@ test('digest keeps prompts short and tools ranked', () => {
   assert.equal(d.project, 'P');
 });
 
+test('priceFromCostState matches Claude Code totalCostUSD and avoids double-counting subagents', () => {
+  const table = { models: {}, overrides: {} };
+  const reported = {
+    totalCostUSD: 2.922,
+    modelUsage: {
+      'claude-sonnet-5-5': {
+        inputTokens: 318,
+        outputTokens: 35700,
+        cacheReadInputTokens: 8060000,
+        cacheCreationInputTokens: 625100,
+        costUSD: 2.922,
+      },
+    },
+  };
+  assert.equal(ccReportedCost(reported), 2.922);
+  const priced = priceFromCostState(reported, table);
+  assert.ok(priced);
+  assert.equal(priced.cost.total, 2.922);
+  assert.equal(priced.models[0].cost.total, 2.922);
+});
+
+test('resolveSubagentType avoids printing unknown on receipts', () => {
+  assert.equal(resolveSubagentType(null), 'Subagent');
+  assert.equal(resolveSubagentType({ agentType: 'Explore' }), 'Explore');
+  assert.equal(resolveSubagentType({ agent_type: 'Plan' }), 'Plan');
+  assert.equal(resolveSubagentType({ type: 'unknown' }), 'Subagent');
+});
+
 test('parseTranscript copes with gateway / on-prem usage shapes', async () => {
   const fs = await import('node:fs');
   const os = await import('node:os');
@@ -222,6 +252,23 @@ test('parseTranscript copes with gateway / on-prem usage shapes', async () => {
   const none = parse('none', [asst('m1', 'r1', { input_tokens: 0, output_tokens: 0 }), user(), asst('m2', 'r2', undefined)]);
   assert.equal(none.turns.length, 2);
   assert.ok(none.turns.every((x) => x.unreported && x.model === 'qwen3-coder:30b'));
+});
+
+test('parseTranscript carries model forward when early chunks omit it', async () => {
+  const fs = await import('node:fs');
+  const os = await import('node:os');
+  const path = await import('node:path');
+  const { parseTranscript } = await import('../src/parse.js');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'burner-model-'));
+  const f = path.join(dir, 's.jsonl');
+  const lines = [
+    { type: 'assistant', requestId: 'r1', message: { role: 'assistant', content: [{ type: 'text', text: 'a' }] } },
+    { type: 'assistant', requestId: 'r1', message: { role: 'assistant', model: 'claude-sonnet-5-5', usage: { input_tokens: 10, output_tokens: 5 }, content: [{ type: 'text', text: 'b' }] } },
+  ];
+  fs.writeFileSync(f, lines.map((e) => JSON.stringify(e)).join('\n'));
+  const { turns } = parseTranscript(f);
+  assert.equal(turns.length, 1);
+  assert.equal(turns[0].model, 'claude-sonnet-5-5');
 });
 
 test('burnerShell always uses node plus absolute burner.js path', async () => {
