@@ -2,7 +2,7 @@
 //   skills/<SKILL_NAME>/SKILL.md  — the tag skill, available in every project
 //   SessionEnd hook               — session level: local auto-tag (no API, no CLAUDE.md)
 
-import { readFileSync, writeFileSync, mkdirSync, existsSync, rmSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync, existsSync, rmSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
@@ -64,6 +64,7 @@ export function skillMarkdown(cfg) {
   return `---
 name: ${SKILL_NAME}
 description: Tag the current Claude Code session with what it was used for (coding, debugging, planning, research, writing, …) for burner usage analytics. Use when the user runs /${SKILL_NAME} or asks to tag/categorize this session.
+argument-hint: "[${cfg.categories.map((c) => c.id).join('|')}]"
 ---
 
 # ${SKILL_NAME}
@@ -71,6 +72,8 @@ description: Tag the current Claude Code session with what it was used for (codi
 Pick the one category that best describes the **user's intent** for the work being tagged — what they wanted done, not which tools you happened to use. Works for any kind of work, technical or not. Reading files to fix a bug is \`debugging\`, not \`research\`.
 
 ${cats}
+
+The user typed: \`$ARGUMENTS\`. If that is one of the categories above, use it as is — don't judge.
 
 Then run exactly one command (no extra exploration first):
 
@@ -82,6 +85,44 @@ ${burnerShell('tag')} <category> --session "\${CLAUDE_SESSION_ID}" --reason "<un
 - If the command says the category isn't allowed for this project, pick the closest allowed one it lists and run it again.
 - Don't tell the user about it unless they ran /${SKILL_NAME} themselves or the command failed. Then reply with one line: \`tagged <category>\`.
 `;
+}
+
+const MENU_MARK = '<!-- burner:menu -->';
+const menuName = (id) => `${SKILL_NAME}-${id}`;
+
+// One tiny skill per category. Typing /burner-tag in Claude Code lists them
+// like an options menu; picking one tags the session with a shell command that
+// runs when the skill loads, so the model never has to decide or run anything.
+export function menuSkillMarkdown(cat) {
+  const allow = `Bash(${nodeCmd()} tag:*)`;
+  const desc = `Tag this session as ${cat.label} — ${(cat.description || cat.label)}`.replace(/"/g, "'");
+  const run = `${burnerShell('tag')} ${cat.id} --session "\${CLAUDE_SESSION_ID}" --reason "picked from /${SKILL_NAME} menu"`;
+  return `---
+name: ${menuName(cat.id)}
+description: "${desc}"
+disable-model-invocation: true
+allowed-tools: ${JSON.stringify(allow)}
+---
+${MENU_MARK}
+Tag result: !\`${run}\`
+
+Reply with exactly the tag result above on one line, and nothing else. Do not run any tools.
+`;
+}
+
+function menuSkillDirs() {
+  const root = path.join(CLAUDE_HOME, 'skills');
+  if (!existsSync(root)) return [];
+  return readdirSync(root)
+    .filter((d) => d.startsWith(SKILL_NAME + '-'))
+    .map((d) => path.join(root, d))
+    .filter((d) => {
+      try { return readFileSync(path.join(d, 'SKILL.md'), 'utf-8').includes(MENU_MARK); } catch { return false; }
+    });
+}
+
+function removeMenuSkills() {
+  for (const d of menuSkillDirs()) rmSync(d, { recursive: true, force: true });
 }
 
 function readJsonFile(file) {
@@ -161,6 +202,14 @@ export function installSkill(cfg) {
   const p = paths();
   mkdirSync(p.skillDir, { recursive: true });
   writeFileSync(p.skillFile, skillMarkdown(cfg), 'utf-8');
+  removeMenuSkills();
+  for (const cat of cfg.categories) {
+    const dir = path.join(CLAUDE_HOME, 'skills', menuName(cat.id));
+    // never overwrite a skill of the user's own that happens to share the name
+    if (existsSync(path.join(dir, 'SKILL.md'))) continue;
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(path.join(dir, 'SKILL.md'), menuSkillMarkdown(cat), 'utf-8');
+  }
   if (existsSync(p.legacyCommand)) rmSync(p.legacyCommand);
 }
 
@@ -170,6 +219,7 @@ export function applyTagging(cfg) {
   if (level === 'off') {
     const p = paths();
     if (existsSync(p.skillDir)) rmSync(p.skillDir, { recursive: true, force: true });
+    removeMenuSkills();
   } else {
     installSkill(cfg);
   }
@@ -182,6 +232,7 @@ export function applyTagging(cfg) {
 export function uninstall() {
   const p = paths();
   if (existsSync(p.skillDir)) rmSync(p.skillDir, { recursive: true, force: true });
+  removeMenuSkills();
   stripBurnerClaudeMd();
   removeSessionEndHook();
 }
@@ -199,6 +250,7 @@ export function installStatus(cfg = null) {
     skillName: SKILL_NAME,
     skillInstalled: existsSync(p.skillFile),
     skillPath: p.skillFile,
+    menuSkills: menuSkillDirs().map((d) => path.basename(d)),
     skillInstallCmd: burnerShell('install'),
     skillInstallCmdNpm: `${NPM_CLI} install`,
     devCheckout: isDevCheckout(),

@@ -8,6 +8,7 @@ import {
   allowedCategories,
   buildDigest,
   loadLearned,
+  usableModel,
   predictLearned,
   resolveCategory,
 } from './classifier.js';
@@ -49,7 +50,7 @@ export async function tagSessionAtEnd({ sessionId } = {}) {
   const allowed = allowedCategories(project, cfg);
   const allowedIds = allowed.map((c) => c.id);
   const digest = buildDigest(parsed, { title: s.customTitle ?? parsed.digest.aiTitle, projectName: project.name });
-  const learned = loadLearned();
+  const learned = usableModel(loadLearned());
 
   let resolved = resolveCategory({ tag: existing, project, cfg, digest, learned });
   if (resolved.category === UNTAGGED.id && learned) {

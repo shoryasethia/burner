@@ -9,6 +9,7 @@ import { loadConfig, resolveProject, UNTAGGED } from './config.js';
 import { loadTags, segmentTurns, loadAssignments, resolveSessionProject } from './tags.js';
 import { resolveCategory, buildDigest, loadLearned } from './classifier.js';
 import { ccReportedCost, hasCostState, priceFromCostState } from './billing.js';
+import { applyActuals } from './calibrate.js';
 
 const zeroTokens = () => ({ input: 0, output: 0, cacheWrite5m: 0, cacheWrite1h: 0, cacheRead: 0 });
 const zeroCost = () => ({ input: 0, output: 0, cacheWrite: 0, cacheRead: 0, total: 0 });
@@ -96,11 +97,7 @@ export async function analyzeSessions(opts = {}) {
   // Oldest first: a continued session re-logs requests from its parent;
   // they're billed to the session that made them.
   const seenRequests = new Set();
-  const results = [];
-  const digests = new Map();
-  const modelIndex = new Map();
-  const cwdIndex = new Map();
-  const projectTotals = new Map();
+  const pending = [];
 
   for (const session of [...discovered].reverse()) {
     const main = parseTranscript(session.mainFile);
@@ -190,10 +187,26 @@ export async function analyzeSessions(opts = {}) {
       agents: agentInvocations([main, ...subs.map((s) => s.parsed)]),
       ccReportedCost: ccReportedCost(main.reported),
     };
-    if (opts.project && !row.project.toLowerCase().includes(opts.project.toLowerCase())) continue;
-    if (!within(session, opts)) continue;
+    pending.push({ row, digest, cwd, dirProject, project, session });
+  }
+
+  // Billed amounts the user entered are applied to every session first, so a
+  // period's factor never depends on which project/date filter is active.
+  const { rows: calibrated, applied } = applyActuals(pending.map((p) => p.row), cfg.billing?.actuals);
+  const results = [];
+  const digests = new Map();
+  const modelIndex = new Map();
+  const cwdIndex = new Map();
+  const projectTotals = new Map();
+
+  pending.forEach((entry, i) => {
+    const { digest, cwd, dirProject, project, session } = entry;
+    const row = calibrated[i];
+    if (opts.project && !row.project.toLowerCase().includes(opts.project.toLowerCase())) return;
+    if (!within(session, opts)) return;
     results.push(row);
     digests.set(session.sessionId, digest);
+    const { models, totalCost: cost } = row;
 
     for (const m of models) {
       const e = modelIndex.get(m.rawModel) ?? { rawModel: m.rawModel, sessions: 0, unreported: 0, tokens: zeroTokens(), cost: 0 };
@@ -214,7 +227,7 @@ export async function analyzeSessions(opts = {}) {
     pt.sessions += 1;
     pt.cost += cost.total;
     projectTotals.set(project.name, pt);
-  }
+  });
 
   results.sort((a, b) => b.mtime - a.mtime);
 
@@ -230,6 +243,7 @@ export async function analyzeSessions(opts = {}) {
     projectTotals: [...projectTotals.values()],
     categories: [...cfg.categories, UNTAGGED],
     config: cfg,
+    billingApplied: applied,
     pricing: pricingInfo(table),
     pricingSource: table.source,
     generatedAt: new Date().toISOString(),

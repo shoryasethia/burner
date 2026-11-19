@@ -3,9 +3,9 @@ import path from 'node:path';
 import { analyzeSessions } from './analyze.js';
 import { discoverSessions } from './discover.js';
 import { parseTranscript } from './parse.js';
-import { loadConfig } from './config.js';
+import { loadConfig, mapLegacyCategory } from './config.js';
 import { loadTags, setTag, resolveSessionProject } from './tags.js';
-import { allowedCategories, trainLearned, saveLearned, loadPrior } from './classifier.js';
+import { allowedCategories, buildDigest, trainLearned, saveLearned, loadPrior, loadUserModel, learnFromTag, evaluateLeaveOneOut, LOCAL_WEIGHT } from './classifier.js';
 
 function samePath(a, b) {
   const n = (p) => path.resolve(p).replace(/[\\/]+$/, '').toLowerCase();
@@ -29,6 +29,17 @@ export function resolveCurrentSession(explicit, cwd = process.cwd()) {
   return sessions[0] ?? null;
 }
 
+// A tag you set yourself is learned on the spot (counts are additive), so the
+// model improves without waiting for "Train from my tags". Never throws: a
+// tag must not fail because the model file couldn't be written.
+export function rememberTag(sessionId, digest, category, previous = null) {
+  try {
+    if (!digest?.prompts?.length) return;
+    const prev = previous && ['skill', 'manual'].includes(previous.source) ? previous.category : null;
+    saveLearned(learnFromTag(loadUserModel(), { sessionId, digest, category, previous: prev }));
+  } catch { /* the tag itself is already saved */ }
+}
+
 export function tagFromCli({ category, session, reason, task, source = 'skill' }) {
   const cfg = loadConfig();
   const s = resolveCurrentSession(session);
@@ -39,7 +50,9 @@ export function tagFromCli({ category, session, reason, task, source = 'skill' }
   if (!allowed.includes(category)) {
     throw new Error(`"${category}" is not a category for project ${project.name}. Use one of: ${allowed.join(', ')}`);
   }
+  const previous = loadTags()[s.sessionId];
   const entry = setTag(s.sessionId, { category, source, reason, segment: !!task });
+  if (!task) rememberTag(s.sessionId, buildDigest(parseTranscript(s.mainFile), { title: s.customTitle, projectName: project.name }), category, previous);
   return { sessionId: s.sessionId, project: project.name, ...entry };
 }
 
@@ -76,7 +89,7 @@ export async function fetchSweChat({ token, limit = 5000, onProgress } = {}) {
 
 // Trains the learned model: user tags (weighted up - they're this user's
 // own work) plus any public prior examples ({ text, category }).
-export async function trainFromTags({ prior = [], localWeight = 5, bootstrapPrior = false } = {}) {
+export async function trainFromTags({ prior = [], localWeight = LOCAL_WEIGHT, bootstrapPrior = false } = {}) {
   try {
     const a = await analyzeSessions();
     const tags = loadTags();
@@ -86,7 +99,7 @@ export async function trainFromTags({ prior = [], localWeight = 5, bootstrapPrio
       if (!t || !['skill', 'manual'].includes(t.source)) continue;
       const digest = a.digests.get(s.sessionId);
       if (!digest?.prompts?.length) continue;
-      examples.push({ digest, category: t.category, weight: localWeight, source: 'local' });
+      examples.push({ digest, category: mapLegacyCategory(t.category), weight: localWeight, source: 'local', sessionId: s.sessionId });
     }
     for (const p of prior) {
       const text = String(p.text ?? '').trim();
@@ -98,6 +111,11 @@ export async function trainFromTags({ prior = [], localWeight = 5, bootstrapPrio
       return { ok: false, examples: examples.length, message: `need at least 6 tagged sessions across 2+ categories to learn from (have ${examples.length})` };
     }
     const model = trainLearned(examples, { prior: bootstrapPrior ? loadPrior() : null });
+    model.learned = Object.fromEntries(examples.filter((e) => e.sessionId).map((e) => [e.sessionId, e.category]));
+    const own = examples.filter((e) => e.source === 'local');
+    const cv = evaluateLeaveOneOut(own, { version: model.version ?? 2 });
+    const cvOld = evaluateLeaveOneOut(own, { version: 1 });
+    if (cv) model.eval = { ...cv, previousAccuracy: cvOld?.accuracy ?? null, at: new Date().toISOString() };
     saveLearned(model);
     const localCount = examples.filter((e) => e.source === 'local').length;
     return {
@@ -106,6 +124,7 @@ export async function trainFromTags({ prior = [], localWeight = 5, bootstrapPrio
       totalRows: model.examples,
       sources: model.sources,
       classes: Object.fromEntries(Object.entries(model.classes).map(([k, v]) => [k, v.docs])),
+      eval: model.eval ?? null,
     };
   } catch (err) {
     const code = err?.code;

@@ -171,6 +171,10 @@ export function renderReceipt(session, categories, { served = false, theme = nul
       ? `<div class="line"><span class="label indent">Claude Code reported</span><span class="tok"></span><span class="amt">${fmtUsd(session.ccReportedCost)}</span></div>`
       : '';
 
+  const billedLine = session.billing
+    ? `<div class="line"><span class="label indent">Calculated ${fmtUsd(session.rawCost)} · scaled ×${session.billing.factor.toFixed(3)} to your billed ${session.billing.from} – ${session.billing.to}</span><span class="tok"></span><span class="amt"></span></div>`
+    : '';
+
   const splitSection = session.categorySplit?.length > 1 ? session.categorySplit.map((x) =>
     `<div class="line"><span class="label indent"><span class="dot" style="background:${catVar(x.category)}"></span>${esc(catById[x.category]?.label ?? x.category)}</span><span class="tok">${fmtTok(x.tokens)}</span><span class="amt">${fmtUsd(x.cost)}</span></div>`).join('') : '';
 
@@ -282,6 +286,7 @@ ${logoTextUri ? `<img class="page-brand" src="${logoTextUri}" alt="Burner" />` :
   ${session.billingSource === 'cost-state' ? '' : subagentModelSections(session, esc, modelBlock)}
   ${detailSection}
   ${ccLine}
+  ${billedLine}
   <hr class="rule" />
   <div class="line bold"><span class="label">SUBTOTAL</span><span class="tok">${fmtTok(totalTok)}</span><span class="amt"></span></div>
   <div class="line total bold"><span class="label">TOTAL</span><span class="tok"></span><span class="amt">${fmtUsd(session.totalCost.total)}</span></div>

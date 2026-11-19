@@ -495,7 +495,7 @@ ${logoTextUri ? `<img class="page-brand" src="${logoTextUri}" alt="Burner" />` :
   <div class="tagline">-- every token, every session, itemized --</div>
   <hr class="rule" />
   <div class="meta-row">
-    <div>GENERATED: ${shortDate(generatedAt)}<br/>PRICING: ${pricingLbl}<br/>UNTAGGED: ${untaggedCount}</div>
+    <div>GENERATED: ${shortDate(generatedAt)}<br/>PRICING: ${pricingLbl}<br/>${(data.billingApplied||[]).some(b=>b.factor!=null)?'COSTS: SCALED TO BILLED AMOUNT<br/>':''}UNTAGGED: ${untaggedCount}</div>
     <div style="text-align:right">SESSIONS: ${totalSessions}<br/>PROJECTS: ${uniqueProjects.length}<br/>MODELS: ${uniqueModels.length}</div>
   </div>
   <hr class="rule" />

@@ -93,6 +93,7 @@ input[type=range]{width:100%;padding:0;accent-color:var(--accent);}
     <button data-tab="projects">Projects</button>
     <button data-tab="categories">Categories</button>
     <button data-tab="pricing">Pricing</button>
+    <button data-tab="billing">Billing</button>
     <button data-tab="tagging">Tagging</button>
     <span class="sp"></span>
     <button data-theme="paper">Paper</button>
@@ -207,7 +208,7 @@ document.querySelectorAll('button[data-theme]').forEach(function(b){ b.addEventL
 setTheme(document.documentElement.getAttribute('data-theme'), false);
 
 /* tabs */
-var TABS = ['projects','categories','pricing','tagging'];
+var TABS = ['projects','categories','pricing','billing','tagging'];
 function readHash(){ var t = location.hash.replace('#',''); tab = TABS.indexOf(t) >= 0 ? t : 'projects'; }
 document.querySelectorAll('button[data-tab]').forEach(function(b){ b.addEventListener('click', function(){ location.hash = b.getAttribute('data-tab'); }); });
 window.addEventListener('hashchange', function(){ readHash(); render(); });
@@ -269,13 +270,14 @@ function applyState(st){
   draftProjects = sortedProjects(clone(S.config.projects || [])); projDirty = false; openProj = [];
   draftCats = clone(S.config.categories || []).map(function(c){ c._existing = true; return c; }); catDirty = false;
   priceEdits = {}; priceResets = {};
+  draftBill = clone((S.config.billing && S.config.billing.actuals) || []); billDirty = false;
   applyCatOverrides();
 }
 function render(){
   document.querySelectorAll('button[data-tab]').forEach(function(b){ b.classList.toggle('active', b.getAttribute('data-tab') === tab); });
   view.textContent = '';
   if (!S){ view.appendChild(h('div', {class:'card dim', text:'loading…'})); return; }
-  var fn = { projects: rProjects, categories: rCategories, pricing: rPricing, tagging: rTagging }[tab];
+  var fn = { projects: rProjects, categories: rCategories, pricing: rPricing, billing: rBilling, tagging: rTagging }[tab];
   view.appendChild(fn());
 }
 function rerenderKeep(){ var y = window.scrollY; render(); window.scrollTo(0, y); }
@@ -441,6 +443,60 @@ function saveCats(){
   }
   var out = draftCats.map(function(c){ return {id:c.id, label:c.label.trim(), color:c.color, description:c.description || ''}; });
   save(api('PUT', '/api/config', {categories: out}));
+}
+
+/* ---------- BILLING ---------- */
+var draftBill = [], billDirty = false;
+function isoDay(d){ return d.toISOString().slice(0, 10); }
+function billBar(){ return h('div', {class:'savebar', id:'billbar'}, [h('span', {class:'dim', text:'unsaved changes'}), h('span', {class:'row', style:'margin:0'}, [h('button', {text:'Cancel', onclick:function(){ draftBill = clone((S.config.billing && S.config.billing.actuals) || []); billDirty = false; rerenderKeep(); toast('changes discarded'); }}), h('button', {text:'Save', onclick:saveBilling})])]); }
+function setBillDirty(){ if (billDirty) return; billDirty = true; if (tab === 'billing' && !document.getElementById('billbar')) view.firstChild.appendChild(billBar()); }
+function saveBilling(){
+  var out = [];
+  for (var i = 0; i < draftBill.length; i++){
+    var b = draftBill[i], amt = Number(b.amount);
+    if (!b.from || !b.to) return toast('every period needs a start and end date', true);
+    if (b.from > b.to) return toast('period ' + b.from + ' \u2013 ' + b.to + ' ends before it starts', true);
+    if (!(amt > 0)) return toast('enter the amount you were charged for ' + b.from + ' \u2013 ' + b.to, true);
+    out.push({from:b.from, to:b.to, amount:Math.round(amt * 100) / 100});
+  }
+  save(api('PUT', '/api/config', {billing:{actuals:out}}), 'billing saved \u2014 report updated');
+}
+function rBilling(){
+  var wrap = h('div');
+  var applied = S.billingApplied || [];
+  var card = h('div', {class:'card'}, [h('h3', {text:'What I was actually charged'}),
+    h('p', {class:'note', text:'Burner estimates cost from tokens and public prices, so it can differ from your invoice. Enter the amount you were really charged for a period and every dollar figure in that period (report, receipts, charts) is scaled to match it. The scale is one factor for the whole period, so every percentage and every comparison between sessions stays exactly the same. Tokens are counted straight from your sessions and are never changed.'})]);
+  var tb = h('tbody');
+  draftBill.forEach(function(b, i){
+    var saved = (S.config.billing && S.config.billing.actuals || []).some(function(x){ return x.from === b.from && x.to === b.to && Number(x.amount) === Number(b.amount); });
+    var info = saved ? applied.filter(function(a){ return a.from === b.from && a.to === b.to; })[0] : null;
+    var status = !saved ? 'not saved yet' : !info ? '' : info.factor == null ? 'no priced sessions in this period' : info.sessions + ' session' + (info.sessions === 1 ? '' : 's') + ' \u00b7 calculated ' + money(info.calculated) + ' \u2192 ' + money(info.amount) + ' (\u00d7' + info.factor.toFixed(3) + ')';
+    tb.appendChild(h('tr', null, [
+      h('td', null, h('input', {type:'date', value:b.from, oninput:function(e){ b.from = e.target.value; setBillDirty(); }})),
+      h('td', null, h('input', {type:'date', value:b.to, oninput:function(e){ b.to = e.target.value; setBillDirty(); }})),
+      h('td', null, h('input', {type:'number', min:'0', step:'0.01', style:'width:110px', value:b.amount === '' ? '' : String(b.amount), placeholder:'USD', oninput:function(e){ b.amount = e.target.value; setBillDirty(); }})),
+      h('td', {class:'dim small', text:status}),
+      h('td', null, h('button', {class:'sm', text:'delete', onclick:function(){ draftBill.splice(i, 1); setBillDirty(); rerenderKeep(); }}))
+    ]));
+  });
+  if (!draftBill.length) tb.appendChild(h('tr', null, h('td', {class:'dim', colspan:'5', text:'no billed amounts yet \u2014 costs are calculated from tokens'})));
+  card.appendChild(h('div', {class:'tblwrap'}, h('table', null, [
+    h('thead', null, h('tr', null, [h('th', {text:'From'}), h('th', {text:'To (inclusive)'}), h('th', {text:'Charged (USD)'}), h('th', {text:'Effect'}), h('th', {text:''})])), tb])));
+  card.appendChild(h('div', {class:'row'}, [
+    h('button', {text:'Add period', onclick:function(){
+      var now = new Date();
+      draftBill.push({from:isoDay(new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1))), to:isoDay(now), amount:''});
+      setBillDirty(); rerenderKeep();
+    }}),
+    (S.config.billing && S.config.billing.actuals || []).length ? h('button', {class:'sm', text:'Restore calculated costs', title:'remove every billed amount and go back to costs calculated from tokens', onclick:function(){
+      if (!confirm('Remove all billed amounts? Costs go back to being calculated from tokens and public prices.')) return;
+      draftBill = []; billDirty = false;
+      save(api('PUT', '/api/config', {billing:{actuals:[]}}), 'restored calculated costs');
+    }}) : null,
+    h('span', {class:'dim small', text:'A session counts toward the period its last activity falls in. Periods can\u2019t overlap.'})]));
+  wrap.appendChild(card);
+  if (billDirty) wrap.appendChild(billBar());
+  return wrap;
 }
 
 /* ---------- PRICING ---------- */
@@ -695,6 +751,18 @@ function rTagging(){
       chips.appendChild(h('span', {class:'chip static', title:'training weight ' + w + ' (each of your tags counts as 5)', text:k + ' \u00b7 ' + sess + ' session' + (sess === 1 ? '' : 's')}));
     });
     c3.appendChild(st);
+    var ev = L.eval;
+    if (ev) {
+      var pc = function(x){ return Math.round(x * 100) + '%'; };
+      var evTxt = 'Checked against your own ' + ev.n + ' tags (each one left out and predicted from the rest): ' + pc(ev.accuracy) + ' right, vs ' + pc(ev.baseline) + ' for always guessing your most common category';
+      if (ev.previousAccuracy != null) evTxt += '; the older features got ' + pc(ev.previousAccuracy);
+      evTxt += '. It would label ' + pc(ev.coverage) + ' of sessions on its own' + (ev.precision != null ? ', ' + pc(ev.precision) + ' of those right' : '') + '.';
+      c3.appendChild(h('p', {class:'dim small', style:'margin:6px 0 0', text:evTxt}));
+    } else if (L.hasUserModel) {
+      c3.appendChild(h('p', {class:'dim small', style:'margin:6px 0 0', text:'Accuracy appears here once you have 10+ tagged sessions across 2+ categories and train.'}));
+    }
+    if (L.hasUserModel && L.featureVersion < 2) c3.appendChild(h('p', {class:'dim small', style:'margin:4px 0 0', text:'This model was trained with the older, simpler features. Train again to use the new ones (first prompt, project, branch, tools).'}));
+    if (L.hasUserModel) c3.appendChild(h('p', {class:'dim small', style:'margin:4px 0 0', text:'Every tag you set (/burner-tag, the menu, or the report) is also learned immediately, so you only need to Train to refresh the accuracy figure.'}));
     if (chips.childNodes.length) {
       c3.appendChild(chips);
       c3.appendChild(h('p', {class:'dim small', style:'margin:4px 0 0', text:'Counts are how many of your tagged sessions trained each category (your tags weigh more than any public bootstrap data).'}));
@@ -731,7 +799,7 @@ function rTagging(){
 
 window.addEventListener('pageshow', function(e){
   // Back/forward restores a frozen copy: reload fresh state unless there are unsaved edits.
-  if (e.persisted && !projDirty && !catDirty && !Object.keys(priceEdits).length && !Object.keys(priceResets).length) api('GET', '/api/state').then(function(st){ applyState(st); allSessions = null; rerenderKeep(); });
+  if (e.persisted && !projDirty && !catDirty && !billDirty && !Object.keys(priceEdits).length && !Object.keys(priceResets).length) api('GET', '/api/state').then(function(st){ applyState(st); allSessions = null; rerenderKeep(); });
 });
 readHash(); render();
 api('GET', '/api/state').then(function(st){ applyState(st); render(); }).catch(function(e){ view.textContent = ''; view.appendChild(h('div', {class:'card err', text:'Failed to load state: ' + e.message})); });

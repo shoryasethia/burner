@@ -34,7 +34,7 @@ burner serve           # same; --port N, --no-open
 burner install         # global /burner-tag skill + tagging level from ~/.burner/config.yaml
 ```
 
-Settings covers **projects**, **categories**, **pricing** (pin/refresh per model), and **tagging** (slider, train your intent model).
+Settings covers **projects**, **categories**, **pricing** (pin/refresh per model), **billing** (enter what you were actually charged), and **tagging** (slider, train your intent model).
 
 ## Commands
 
@@ -74,7 +74,13 @@ Resolution order:
 | Manual | `/burner-tag` only; skill stays installed |
 | Session end | SessionEnd hook tags with your **local** trained model (no API, no CLAUDE.md) |
 
-Moving the tagging slider updates `~/.claude` automatically. Use **Train from my tags** in Settings for a local naive-Bayes model (`~/.burner/model/intent-nb.json`). Training is pure Node — no GPU or Python. CLI `burner model train` does the same; `--prior` / `--swe-chat` are optional extras.
+In Claude Code, typing `/burner-tag` lists one entry per category (`/burner-tag-coding`, `/burner-tag-debugging`, …) — pick one and the session is tagged by a shell command, with no model judgment. `/burner-tag <category>` works too, and plain `/burner-tag` lets Claude choose. The entries follow your categories; re-sync happens when you edit them in Settings.
+
+Moving the tagging slider updates `~/.claude` automatically. Use **Train from my tags** in Settings for a local naive-Bayes model (`~/.burner/model/intent-nb.json`). Training is pure Node — no GPU or Python. Every tag you set is also learned immediately, and Settings shows a leave-one-out accuracy figure measured on your own tags (older features vs. the current ones). CLI `burner model train` does the same; `--prior` / `--swe-chat` are optional extras.
+
+## What you were actually charged
+
+Burner estimates dollars from tokens and public prices, which can differ from your invoice. In **Settings → Billing** enter the amount you were charged for a period (e.g. a month). Every dollar figure in that period — report, receipts, charts — is multiplied by one factor (billed ÷ calculated) so the total matches your invoice to the cent while every percentage and comparison between sessions stays the same. Token counts are never changed. Periods can't overlap; a session belongs to the period its last activity falls in.
 
 ## Tokens & pricing
 

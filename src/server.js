@@ -10,11 +10,12 @@ import { renderReport } from './report.js';
 import { renderReceipt } from './receipt.js';
 import { renderSettingsPage } from './settings-page.js';
 import { FILES, loadConfig, saveConfig, loadPricingOverrides, savePricingOverrides, TAGGING_LEVELS, UNTAGGED, THEMES, RANGES } from './config.js';
+import { validateActuals } from './calibrate.js';
 import { loadPricingTable, lookupPublic, SOURCE_URL } from './pricing.js';
 import { setTag, clearTag, loadTags, setAssignment } from './tags.js';
 import { applyTagging, installStatus } from './install.js';
 import { loadLearned, priorMeta } from './classifier.js';
-import { trainFromTags } from './tagging.js';
+import { trainFromTags, rememberTag } from './tagging.js';
 
 const ASSETS_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'assets');
 
@@ -53,6 +54,7 @@ export function createApp() {
       projectTotals: a.projectTotals,
       models: a.models,
       pricing: a.pricing,
+      billingApplied: a.billingApplied,
       pricingSourceUrl: SOURCE_URL,
       pricingOverrides: loadPricingOverrides(),
       install: installStatus(loadConfig()),
@@ -65,6 +67,8 @@ export function createApp() {
         sources: learned.sources,
         classes: Object.fromEntries(Object.entries(learned.classes).map(([k, v]) => [k, v.docs])),
         hasUserModel: existsSync(FILES.model),
+        eval: learned.eval ?? null,
+        featureVersion: learned.version ?? 1,
       } : null,
       stats: { sessions: a.sessions.length, tagged: Object.keys(tags).length, untagged: a.sessions.filter((s) => s.category === UNTAGGED.id).length, bySource },
     };
@@ -83,6 +87,7 @@ export function createApp() {
       const next = { ...cur };
       if (body.categories) next.categories = body.categories;
       if (body.projects) next.projects = body.projects;
+      if (body.billing) next.billing = { actuals: body.billing.actuals ?? [] };
       if (body.tagging) next.tagging = { ...cur.tagging, ...body.tagging };
       validateConfig(next);
       const saved = saveConfig(next);
@@ -131,7 +136,11 @@ export function createApp() {
       else {
         const cfg = loadConfig();
         if (!cfg.categories.some((c) => c.id === body.category)) throw httpError(400, `unknown category ${body.category}`);
+        // look the digest up before setTag: the tag changes tags.json, which would invalidate the cache
+        const digest = (await analysis()).digests.get(body.sessionId);
+        const previous = loadTags()[body.sessionId];
         setTag(body.sessionId, { category: body.category, source: 'manual' });
+        if (digest) rememberTag(body.sessionId, digest, body.category, previous);
       }
       invalidate();
       return json({ ok: true });
@@ -206,6 +215,8 @@ function validateConfig(cfg) {
     if (ids.has(c.id)) throw httpError(400, `duplicate category ${c.id}`);
     ids.add(c.id);
   }
+  const billingErr = validateActuals(cfg.billing?.actuals);
+  if (billingErr) throw httpError(400, billingErr);
   const names = new Set();
   for (const p of cfg.projects) {
     if (!p.name?.trim()) throw httpError(400, 'every project needs a name');

@@ -2,6 +2,7 @@ import { readFileSync, writeFileSync, mkdirSync, existsSync, renameSync } from '
 import path from 'node:path';
 import os from 'node:os';
 import { parseYaml, stringifyYaml } from './yaml.js';
+import { cleanActuals } from './calibrate.js';
 
 export const HOME = process.env.BURNER_HOME ?? path.join(os.homedir(), '.burner');
 export const CLAUDE_HOME = process.env.CLAUDE_CONFIG_DIR ?? path.join(os.homedir(), '.claude');
@@ -53,6 +54,7 @@ export function defaultConfig() {
       level: 'manual',
       learned: true,
     },
+    billing: { actuals: [] },
     ui: { theme: 'paper', range: 'all', customFrom: '', customTo: '' },
   };
 }
@@ -94,6 +96,7 @@ function normalizeConfig(raw) {
   if (cfg.tagging.level === 'auto') cfg.tagging.level = 'manual';
   if (cfg.tagging.level === 'task') cfg.tagging.level = 'manual';
   delete cfg.tagging.endModel;
+  cfg.billing = { actuals: cleanActuals(cfg.billing?.actuals) };
   const ui = cfg.ui ?? {};
   cfg.ui = {
     theme: THEMES.includes(ui.theme) ? ui.theme : 'paper',
